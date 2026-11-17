@@ -82,18 +82,62 @@ export function currentWeight() {
   return w ? w.kg : S.profile.weight;
 }
 
-export function targets(p = S.profile) {
+/* Activité au quotidien HORS sport (le sport est ajouté à part, selon le nombre de séances) */
+const NEAT = { '1.2': 1.2, '1.375': 1.3, '1.55': 1.4, '1.725': 1.5 };
+const WATER_PER_KG = { '1.2': 30, '1.375': 32, '1.55': 35, '1.725': 38 };
+const HOT_COUNTRIES = ['DZ', 'MA', 'TN', 'SN', 'CI'];
+const round = (v, step) => Math.round(v / step) * step;
+
+export function isTrainingDay(k = today(), p = S.profile) {
+  const wd = weekdayMon(parseKey(k));
+  return buildPlan(p).some((s) => s.weekday === wd);
+}
+
+export function targets(p = S.profile, k = today()) {
   const weight = currentWeight();
-  const pp = { ...p, weight };
   const goal = GOALS[p.goal];
-  const tdee = bmr(pp) * Number(p.activity);
-  const floor = p.sex === 'f' ? 1200 : 1500;
-  const kcal = Math.max(floor, Math.round((tdee * (1 + goal.kcal)) / 10) * 10);
-  const prot = Math.round(weight * goal.prot);
-  const fat = Math.round(weight * 0.9);
+  const female = p.sex === 'f';
+  const b = bmr({ ...p, weight });
+
+  // Dépense : métabolisme de base × activité quotidienne, + environ 3,5 % par séance hebdomadaire
+  const neat = NEAT[String(p.activity)] ?? 1.3;
+  const pal = Math.min(1.9, neat + 0.035 * Number(p.days || 0));
+  const tdee = b * pal;
+
+  // Ajustement selon l'objectif, plafonné pour rester raisonnable
+  let delta = 0;
+  if (p.goal === 'perte_poids') delta = -Math.min(tdee * 0.2, 600);
+  else if (p.goal === 'prise_masse') delta = Math.min(tdee * 0.12, 400);
+  else if (p.goal === 'muscle') delta = Math.min(tdee * 0.05, 200);
+  const floor = Math.max(female ? 1200 : 1500, Math.round(b));
+  const kcal = Math.max(round(floor, 10), round(tdee + delta, 10));
+
+  // Protéines : sur un poids de référence si surpoids (sinon on surestime)
+  const h = p.height / 100;
+  const bmiV = weight / (h * h);
+  const refW = bmiV > 27 ? 25 * h * h : weight;
+  const prot = Math.round(refW * goal.prot);
+  const fat = Math.round((kcal * 0.27) / 9);
   const carbs = Math.max(50, Math.round((kcal - prot * 4 - fat * 9) / 4));
-  const water = Math.round((weight * 35) / 50) * 50;
-  return { kcal, prot, fat, carbs, water, steps: goal.steps, sleepMin: 8 * 60, tdee: Math.round(tdee) };
+
+  // Eau à boire : ml/kg selon l'activité, bornée, + séance du jour, + chaleur (pays chauds, mai à septembre)
+  const perKg = WATER_PER_KG[String(p.activity)] ?? 32;
+  const waterW = bmiV > 27 ? refW + (weight - refW) * 0.4 : weight; // poids corrigé si surpoids
+  const waterBase = round(Math.min(female ? 3000 : 3500, Math.max(female ? 1500 : 1800, waterW * perKg)), 50);
+  const d = S.days?.[k];
+  const waterTrain = (S.profile === p && (isTrainingDay(k, p) || d?.workout)) ? 500 : 0;
+  const month = parseKey(k).getMonth() + 1;
+  const waterHeat = HOT_COUNTRIES.includes(p.country) && month >= 5 && month <= 9 ? 500 : 0;
+  const water = waterBase + waterTrain + waterHeat;
+
+  // Sommeil recommandé selon l'âge
+  const sleepMin = p.age < 18 ? 9 * 60 : p.age >= 65 ? 7.5 * 60 : 8 * 60;
+
+  return {
+    kcal, prot, fat, carbs, water, steps: goal.steps, sleepMin,
+    tdee: Math.round(tdee), bmr: Math.round(b), pal: +pal.toFixed(2), delta: Math.round(delta),
+    protPerKg: goal.prot, refW: Math.round(refW), waterBase, waterTrain, waterHeat, perKg,
+  };
 }
 
 export function bmi() {

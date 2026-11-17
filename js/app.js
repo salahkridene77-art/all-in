@@ -5,8 +5,9 @@ import * as D from './data.js';
 import {
   S, save, resetAll, replaceState, today, day, peekDay, lastDays, dayLetter, addDays, parseKey, weekdayMon,
   DAY_SHORT, DAY_NAMES, prettyDate, shortDate, targets, bmi, currentWeight, dayNutrition, sleepMinutes, fmtDur,
-  buildPlan, todaySession, streak, dayScore, esc, fmt, ring, bar, barChart, lineChart, toast, openModal, closeModal, beep, pad, onSave,
+  buildPlan, todaySession, streak, dayScore, isTrainingDay, esc, fmt, ring, bar, barChart, lineChart, toast, openModal, closeModal, beep, pad, onSave,
 } from './core.js';
+import { exerciseAnim, hasAnim } from './anim.js';
 import { cloud, initCloud, schedulePush, signUp, signIn, signInGoogle, resetPassword, signOutUser, authError, ai, pullAndMerge } from './cloud.js';
 
 const app = document.getElementById('app');
@@ -147,10 +148,11 @@ function viewOnboarding() {
         body: `<div class="target-grid">
           <div class="card"><div class="xs upper muted">Calories</div><div class="mid-num color-food">${fmt(t.kcal)}</div><div class="xs muted">kcal / jour</div></div>
           <div class="card"><div class="xs upper muted">Protéines</div><div class="mid-num color-accent">${t.prot} g</div><div class="xs muted">par jour</div></div>
-          <div class="card"><div class="xs upper muted">Eau</div><div class="mid-num color-water">${(t.water / 1000).toFixed(1)} L</div><div class="xs muted">par jour</div></div>
+          <div class="card"><div class="xs upper muted">Eau</div><div class="mid-num color-water">${(t.waterBase / 1000).toFixed(1).replace('.', ',')} L</div><div class="xs muted">+0,5 L les jours de sport</div></div>
           <div class="card"><div class="xs upper muted">Pas</div><div class="mid-num color-steps">${fmt(t.steps)}</div><div class="xs muted">par jour</div></div>
-          <div class="card"><div class="xs upper muted">Sommeil</div><div class="mid-num color-sleep">8 h</div><div class="xs muted">par nuit</div></div>
+          <div class="card"><div class="xs upper muted">Sommeil</div><div class="mid-num color-sleep">${fmtDur(t.sleepMin).replace(' 00', '')}</div><div class="xs muted">par nuit</div></div>
           <div class="card"><div class="xs upper muted">Sport</div><div class="mid-num">${d.days}×</div><div class="xs muted">par semaine</div></div></div>
+          ${calcDetails(t, { ...d, days: +d.days })}
           <p class="note">Calculs basés sur la formule de Mifflin-St Jeor. Ce sont des repères, pas une prescription médicale. En cas de problème de santé, demande l'avis d'un médecin avant de commencer.</p>`,
       };
     },
@@ -166,7 +168,7 @@ function viewOnboarding() {
 function targetsFor(p) {
   const saved = S.profile, savedW = S.weights;
   S.profile = p; S.weights = [];
-  const t = targets(p);
+  const t = targets(S.profile);
   S.profile = saved; S.weights = savedW;
   return t;
 }
@@ -292,12 +294,11 @@ function viewSport() {
 
 function exerciseModal(id, extra = {}) {
   const e = D.EXERCISES[id];
-  const q = encodeURIComponent(`${e.name} exercice technique`);
-  openModal(`<div class="modal-head"><div class="row"><div style="font-size:34px">${e.icon}</div><div><h2>${e.name}</h2><p class="small muted">${e.muscles}</p></div></div><button class="icon-btn" data-act="close-modal">✕</button></div>
+  openModal(`<div class="modal-head"><div><h2>${e.name}</h2><p class="small muted">${e.muscles}</p></div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    ${hasAnim(id) ? `<div class="anim-box" style="margin-bottom:16px;padding:6px">${exerciseAnim(id, { size: 230 })}<p class="xs muted" style="padding-bottom:8px">Démonstration animée · le mouvement tourne en boucle</p></div>` : ''}
     ${extra.sets ? `<div class="grid3" style="margin-bottom:16px"><div class="card center" style="padding:12px"><div class="mid-num">${e.unit === 'cardio' ? '1' : extra.sets}</div><div class="xs muted">série${extra.sets > 1 ? 's' : ''}</div></div><div class="card center" style="padding:12px"><div style="font-weight:800;font-size:15px;padding:5px 0">${esc(extra.target)}</div><div class="xs muted">par série</div></div><div class="card center" style="padding:12px"><div class="mid-num">${extra.rest || 0}s</div><div class="xs muted">repos</div></div></div>` : ''}
     <h3>Comment faire</h3><ol class="steps" style="margin-top:10px">${e.steps.map((s) => `<li>${s}</li>`).join('')}</ol>
-    <div class="card flat" style="background:var(--card2);margin-top:16px"><p class="small"><b>💡 Conseil :</b> ${e.tip}</p></div>
-    <a class="btn ghost block" style="margin-top:16px;text-decoration:none" href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener">▶ Voir une démo vidéo</a>`);
+    <div class="card flat" style="background:var(--card2);margin-top:16px"><p class="small"><b>💡 Conseil :</b> ${e.tip}</p></div>`);
 }
 
 /* ---------- Mode séance ---------- */
@@ -381,7 +382,7 @@ function viewWorkout() {
 
   const timed = e.unit === 'time';
   return `<div class="view no-nav workout">${top}${prog}<div class="wk-main">
-    <div class="wk-ico">${e.icon}</div><div><h1>${e.name}</h1><p class="muted small" style="margin-top:4px">${e.muscles}</p></div>
+    ${hasAnim(e.id) ? `<div class="anim-box wk-anim">${exerciseAnim(e.id, { size: 220 })}</div>` : `<div class="wk-ico">${e.icon}</div>`}<div><h1>${e.name}</h1><p class="muted small" style="margin-top:4px">${e.muscles}</p></div>
     ${w.chrono ? `<div class="wk-target">${w.left}s</div>` : `<div class="wk-target">${e.target}</div>`}
     ${e.unit !== 'cardio' ? `<div><div class="small muted" style="margin-bottom:8px">Série ${w.set} / ${e.sets}</div><div class="sets-dots">${Array.from({ length: e.sets }, (_, i) => `<i class="${i < w.set - 1 ? 'done' : ''}"></i>`).join('')}</div></div>` : ''}
     <button class="btn sm ghost" data-act="ex-info" data-id="${e.id}">ⓘ Voir la technique</button></div>
@@ -500,6 +501,7 @@ function suiviWater() {
       <path d="M10 6 L140 6 L126 200 Q125 206 119 206 L31 206 Q25 206 24 200 Z" fill="none" stroke="var(--line)" stroke-width="3"/>
       <text x="75" y="105" text-anchor="middle" font-size="30" font-weight="800" fill="var(--text)" font-family="var(--font)">${Math.round(pct * 100)}%</text></svg></div></div>
     <div class="center"><div class="big-num color-water">${(d.water / 1000).toFixed(2).replace('.', ',')} L</div><p class="small muted" style="margin-top:6px">Objectif : ${(t.water / 1000).toFixed(1).replace('.', ',')} L · ${glasses} verre${glasses > 1 ? 's' : ''} bu${glasses > 1 ? 's' : ''}</p>
+      <p class="xs dim" style="margin-top:4px">Base ${(t.waterBase / 1000).toFixed(1).replace('.', ',')} L${t.waterTrain ? ' · +0,5 L jour de sport' : ''}${t.waterHeat ? ' · +0,5 L chaleur' : ''}</p>
       ${pct >= 1 ? '<p class="small" style="margin-top:8px;color:var(--steps);font-weight:700">🎉 Objectif atteint !</p>' : `<p class="small muted" style="margin-top:4px">Encore ${fmt(t.water - d.water)} ml</p>`}</div>
     <div class="water-btns" style="margin-top:18px">${[['🥃', 150], ['🥛', 250], ['🧃', 330], ['🍶', 500]].map(([i, ml]) => `<button data-act="water-add" data-ml="${ml}"><span>${i}</span>${ml} ml</button>`).join('')}</div>
     ${d.waterLog?.length ? `<button class="btn sm ghost block" style="margin-top:10px" data-act="water-undo">↶ Annuler le dernier ajout (${d.waterLog[d.waterLog.length - 1]} ml)</button>` : ''}</div>
@@ -906,7 +908,8 @@ function viewProfil() {
     <div class="section">${accountCard()}</div>
     <div class="section grid3"><div class="card center" style="padding:12px"><div class="mid-num">${daysUsed}</div><div class="xs muted">jours suivis</div></div><div class="card center" style="padding:12px"><div class="mid-num">${Object.values(S.days).filter((d) => d.workout).length}</div><div class="xs muted">séances</div></div><div class="card center" style="padding:12px"><div class="mid-num">${streak()}</div><div class="xs muted">jours de suite</div></div></div>
     <div class="section card"><h3>Mes objectifs quotidiens</h3>
-      ${[['🍽️', 'Calories', `${fmt(t.kcal)} kcal`], ['🥩', 'Protéines', `${t.prot} g`], ['💧', 'Eau', `${(t.water / 1000).toFixed(1).replace('.', ',')} L`], ['👟', 'Pas', fmt(t.steps)], ['😴', 'Sommeil', '8 h'], ['🏋️', 'Sport', `${p.days} séances / semaine`]].map(([i, l, v]) => `<div class="food-item"><span>${i}</span><div class="grow">${l}</div><b>${v}</b></div>`).join('')}
+      ${[['🍽️', 'Calories', `${fmt(t.kcal)} kcal`], ['🥩', 'Protéines', `${t.prot} g`], ['💧', 'Eau', `${(t.waterBase / 1000).toFixed(1).replace('.', ',')} L (+0,5 L jour de sport)`], ['👟', 'Pas', fmt(t.steps)], ['😴', 'Sommeil', fmtDur(t.sleepMin).replace(' 00', '')], ['🏋️', 'Sport', `${p.days} séances / semaine`]].map(([i, l, v]) => `<div class="food-item"><span>${i}</span><div class="grow">${l}</div><b>${v}</b></div>`).join('')}
+      ${calcDetails(t, p)}
       <button class="btn block" style="margin-top:12px" data-act="edit-profile">Modifier mon profil</button></div>
     ${standalone ? '' : `<div class="section card"><h3>📲 Installer l'appli</h3><p class="small muted" style="margin-top:6px;line-height:1.5">${ios ? 'Sur iPhone : touche le bouton Partager de Safari, puis « Sur l\'écran d\'accueil ».' : 'Ajoute All In sur ton écran d\'accueil pour l\'ouvrir comme une vraie appli.'}</p>
       ${!ios ? `<button class="btn primary block" style="margin-top:12px" data-act="install">Installer</button>` : ''}</div>`}
@@ -1464,6 +1467,21 @@ async function fetchProducts() {
 }
 
 Object.assign(A, { 'skin-products': () => fetchProducts() });
+
+/* ---------- Détail des calculs (transparence) ---------- */
+function calcDetails(t, p) {
+  const w = S.profile ? currentWeight() : Number(p.weight);
+  const act = D.ACTIVITY[String(p.activity)]?.label || '';
+  const goalTxt = t.delta < 0 ? `déficit de ${fmt(-t.delta)} kcal pour perdre du poids en douceur` : t.delta > 0 ? `surplus de ${fmt(t.delta)} kcal pour ${p.goal === 'prise_masse' ? 'prendre de la masse' : 'construire du muscle'}` : 'maintien (pas de déficit ni de surplus)';
+  return `<details class="calc"><summary>Comment c'est calculé ?</summary>
+    <ul class="list-plain" style="margin-top:10px">
+      <li><b>Métabolisme de base :</b> ${fmt(t.bmr)} kcal (formule de Mifflin-St Jeor : sexe, âge, taille, poids).</li>
+      <li><b>Dépense du jour :</b> × ${String(t.pal).replace('.', ',')} (${act.toLowerCase()} + ${p.days} séance${p.days > 1 ? 's' : ''}/semaine) = <b>${fmt(t.tdee)} kcal</b>.</li>
+      <li><b>Objectif :</b> ${goalTxt} → <b>${fmt(t.kcal)} kcal</b>.</li>
+      <li><b>Protéines :</b> ${String(t.protPerKg).replace('.', ',')} g × ${t.refW} kg${t.refW < Math.round(w) ? ' (poids de référence)' : ''} = ${t.prot} g. Lipides ≈ 27 % des calories, glucides = le reste.</li>
+      <li><b>Eau à boire :</b> ${t.perKg} ml par kilo${t.refW < Math.round(w) ? ' (poids corrigé)' : ''} = ${(t.waterBase / 1000).toFixed(1).replace('.', ',')} L, +0,5 L les jours de sport${['DZ', 'MA', 'TN', 'SN', 'CI'].includes(p.country) ? ', +0,5 L de mai à septembre (chaleur)' : ''}. L'eau des aliments et des soupes s'ajoute en plus.</li>
+    </ul></details>`;
+}
 onSave(() => schedulePush());
 render();
 initCloud(() => rerender());

@@ -328,3 +328,26 @@ ol.steps li, ul.ing li { line-height: 1.45; }
 .google-btn { background: #fff; color: #1f1f1f; }
 .or { display: flex; align-items: center; gap: 10px; margin: 14px 0; color: var(--dim); font-size: 12px; }
 .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+details.calc { margin-top: 12px; background: var(--card2); border-radius: 14px; padding: 12px 14px; }
+details.calc summary { cursor: pointer; font-weight: 700; font-size: 13.5px; color: var(--accent); list-style: none; }
+details.calc summary::-webkit-details-marker { display: none; }
+details.calc summary::after { content: ' ▾'; }
+details.calc[open] summary::after { content: ' ▴'; }
+details.calc li { font-size: 13px; }
+
+/* ---------- Démonstrations animées ---------- */
+.ex-anim { display: block; }
+.ex-anim .limb, .ex-anim .torso { stroke: var(--text); stroke-linecap: round; fill: none; }
+.ex-anim .limb { stroke-width: 7; }
+.ex-anim .limb.back { stroke: var(--muted); opacity: .55; }
+.ex-anim .torso { stroke-width: 10; }
+.ex-anim .head { fill: var(--text); }
+.ex-anim .ground { stroke: var(--line); stroke-width: 3; stroke-linecap: round; }
+.ex-anim .prop { fill: var(--card2); stroke: var(--line); stroke-width: 1; }
+.ex-anim .prop-line { stroke: var(--dim); stroke-width: 5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.ex-anim .prop-ring { stroke: var(--dim); stroke-width: 4; fill: none; }
+.ex-anim .prop-acc { fill: var(--accent); }
+.ex-anim .prop-rope { stroke: var(--accent); stroke-width: 2; fill: none; }
+.anim-box { background: radial-gradient(80% 80% at 50% 30%, rgba(212,255,58,.08), transparent 70%), var(--card); border: 1px solid var(--line); border-radius: 24px; display: grid; place-items: center; }
+.wk-anim { width: 236px; height: 236px; }
