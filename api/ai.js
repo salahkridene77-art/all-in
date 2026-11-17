@@ -47,12 +47,31 @@ On t'envoie une photo de visage (selfie) et les réponses de la personne à un q
 - seeDoctor = true seulement si tu vois une lésion inhabituelle (grain de beauté irrégulier, plaie, lésion qui saigne, éruption étendue ou inflammatoire importante).
 - tips : 3 ou 4 conseils concrets, en français, tutoiement, basés sur ingrédients et gestes (pas de marques).`;
 
+const PRODUCT_RULES = (country) => `Produits à recommander (champ products) :
+- Pays de l'utilisateur : ${country?.label || 'France'}. Propose 5 ou 6 produits RÉELS, vendus couramment dans ce pays (pharmacie, parapharmacie, grande surface ou boutique en ligne locale fiable), adaptés au type de peau et aux préoccupations.
+- Couvre la routine : un nettoyant, un hydratant, une protection solaire, puis 1 à 3 soins ciblés (sérum, traitement, contour des yeux ou masque) selon les besoins.
+- Varie les budgets et inclus au moins deux produits « petit prix ». Champ budget : « petit prix », « moyen » ou « premium ».
+- Champ prix : un prix approximatif en ${country?.currency || 'monnaie locale'} (ex. « env. 1 800 DA », « env. 15 € »). Champ ou : où l'acheter dans ce pays (ex. « pharmacie », « parapharmacie », « grande surface »).
+- N'invente jamais un produit : ne cite que des produits dont tu es certain qu'ils existent. Si tu doutes du nom exact, cite la gamme de la marque (ex. « gamme Effaclar »). Privilégie les marques réellement distribuées dans ce pays.
+- Jamais de médicament ni de produit sur ordonnance (trétinoïne, isotrétinoïne, antibiotiques, hydroquinone, corticoïdes).
+- Champ pourquoi : une phrase simple, en français, avec tutoiement, qui relie le produit à la peau de la personne.`;
+
+const PRODUCTS_SYSTEM = `Tu es l'assistant skincare d'All In (conseils COSMÉTIQUES, pas médicaux). On te donne le profil de peau d'une personne et son pays : recommande-lui des produits adaptés et disponibles chez elle.`;
+
 const MEAL_SYSTEM = `Tu es le module nutrition d'All In. On t'envoie la photo d'un repas.
 Identifie chaque aliment visible et estime une portion réaliste (en grammes) puis ses calories, protéines (p), glucides (g) et lipides (l). Pense aux plats maghrébins et français courants (couscous, chorba, tajine, msemen, kesra, loubia, etc.) et à l'huile de cuisson.
 Si l'image ne montre pas de nourriture, mets isFood à false et items vide.
 Le champ comment donne en une phrase un conseil bienveillant pour équilibrer ce repas, en français, tutoiement, sans culpabiliser.`;
 
 const S = (type, extra = {}) => ({ type, ...extra });
+const PRODUCT_LIST = S('ARRAY', { items: S('OBJECT', {
+  properties: {
+    etape: S('STRING', { enum: ['Nettoyant', 'Sérum', 'Traitement', 'Contour des yeux', 'Hydratant', 'Protection solaire', 'Masque'] }),
+    marque: S('STRING'), produit: S('STRING'), pourquoi: S('STRING'), prix: S('STRING'), ou: S('STRING'),
+    budget: S('STRING', { enum: ['petit prix', 'moyen', 'premium'] }),
+  },
+  required: ['etape', 'marque', 'produit', 'pourquoi', 'prix', 'ou', 'budget'],
+}) });
 const SCHEMAS = {
   brief: S('OBJECT', { properties: { title: S('STRING'), message: S('STRING'), action: S('STRING') }, required: ['title', 'message', 'action'] }),
   skin: S('OBJECT', {
@@ -65,9 +84,11 @@ const SCHEMAS = {
       tips: S('ARRAY', { items: S('STRING') }),
       seeDoctor: S('BOOLEAN'),
       seeDoctorReason: S('STRING'),
+      products: PRODUCT_LIST,
     },
-    required: ['quality', 'skinType', 'observations', 'summary', 'tips', 'seeDoctor'],
+    required: ['quality', 'skinType', 'observations', 'summary', 'tips', 'seeDoctor', 'products'],
   }),
+  products: S('OBJECT', { properties: { products: PRODUCT_LIST }, required: ['products'] }),
   meal: S('OBJECT', {
     properties: {
       isFood: S('BOOLEAN'),
@@ -169,7 +190,10 @@ export default async function handler(req, res) {
       out = await gemini({ system: BRIEF_SYSTEM, schema: SCHEMAS.brief, contents: [{ role: 'user', parts: [{ text: ctxText(body.context) }] }], temperature: 0.8 });
     } else if (body.task === 'skin') {
       if (!body.image) return res.status(400).json({ error: 'Photo manquante' });
-      out = await gemini({ system: SKIN_SYSTEM, schema: SCHEMAS.skin, temperature: 0.2, contents: [{ role: 'user', parts: [{ text: `Réponses au questionnaire : ${JSON.stringify(body.answers || {}).slice(0, 2000)}\nAnalyse cette photo.` }, img(body.image)] }] });
+      out = await gemini({ system: `${SKIN_SYSTEM}\n\n${PRODUCT_RULES(body.country)}`, schema: SCHEMAS.skin, temperature: 0.2, contents: [{ role: 'user', parts: [{ text: `Réponses au questionnaire : ${JSON.stringify(body.answers || {}).slice(0, 2000)}\nAnalyse cette photo.` }, img(body.image)] }] });
+    } else if (body.task === 'products') {
+      const exclude = (body.exclude || []).slice(0, 12).join(', ');
+      out = await gemini({ system: `${PRODUCTS_SYSTEM}\n\n${PRODUCT_RULES(body.country)}`, schema: SCHEMAS.products, temperature: 0.5, contents: [{ role: 'user', parts: [{ text: `Profil de peau : ${JSON.stringify(body.skin || {}).slice(0, 2500)}${exclude ? `\nPropose des produits différents de : ${exclude}.` : ''}` }] }] });
     } else if (body.task === 'meal') {
       if (!body.image) return res.status(400).json({ error: 'Photo manquante' });
       out = await gemini({ system: MEAL_SYSTEM, schema: SCHEMAS.meal, temperature: 0.2, contents: [{ role: 'user', parts: [{ text: body.note ? `Précision de l'utilisateur : ${String(body.note).slice(0, 300)}` : 'Analyse ce repas.' }, img(body.image)] }] });

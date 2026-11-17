@@ -446,3 +446,18 @@ export const V2_FEATURES = [
   ['🏆', 'Défis entre amis', 'Classements, badges et défis à plusieurs'],
   ['📈', 'Bilans mensuels', 'Ton évolution du mois résumée par le coach'],
 ];
+
+/* ---------- Pays (produits conseillés selon le pays) ---------- */
+export const COUNTRIES = {
+  FR: { label: 'France', flag: '🇫🇷', cur: 'euros (€)' },
+  DZ: { label: 'Algérie', flag: '🇩🇿', cur: 'dinars algériens (DA)' },
+  MA: { label: 'Maroc', flag: '🇲🇦', cur: 'dirhams (MAD)' },
+  TN: { label: 'Tunisie', flag: '🇹🇳', cur: 'dinars tunisiens (TND)' },
+  BE: { label: 'Belgique', flag: '🇧🇪', cur: 'euros (€)' },
+  CH: { label: 'Suisse', flag: '🇨🇭', cur: 'francs suisses (CHF)' },
+  CA: { label: 'Canada', flag: '🇨🇦', cur: 'dollars canadiens ($ CA)' },
+  LU: { label: 'Luxembourg', flag: '🇱🇺', cur: 'euros (€)' },
+  SN: { label: 'Sénégal', flag: '🇸🇳', cur: 'francs CFA (FCFA)' },
+  CI: { label: 'Côte d\'Ivoire', flag: '🇨🇮', cur: 'francs CFA (FCFA)' },
+  OTHER: { label: 'Autre pays', flag: '🌍', cur: 'monnaie locale' },
+};

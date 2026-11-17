@@ -72,11 +72,22 @@ function header(title, { back = null, right = '' } = {}) {
 /* ============================================================
    Onboarding
    ============================================================ */
+function detectCountry() {
+  const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+  const map = { 'Africa/Algiers': 'DZ', 'Africa/Casablanca': 'MA', 'Africa/Tunis': 'TN', 'Europe/Paris': 'FR', 'Europe/Brussels': 'BE', 'Europe/Zurich': 'CH', 'Europe/Luxembourg': 'LU', 'Africa/Dakar': 'SN', 'Africa/Abidjan': 'CI' };
+  if (map[tz]) return map[tz];
+  if (tz.startsWith('America/') && /fr-CA/i.test(navigator.language)) return 'CA';
+  const reg = (navigator.language || '').split('-')[1];
+  return D.COUNTRIES[reg] ? reg : 'FR';
+}
+const userCountry = () => D.COUNTRIES[S.profile?.country] ? S.profile.country : detectCountry();
+const countryInfo = () => D.COUNTRIES[userCountry()];
+
 function newOb(edit = false) {
   const p = S.profile;
   return {
     step: edit ? 1 : 0, edit,
-    d: p ? { ...p, weight: currentWeight() } : { name: '', sex: '', age: '', height: '', weight: '', goal: '', level: '', place: '', days: 3, activity: '1.375' },
+    d: p ? { ...p, country: userCountry(), weight: currentWeight() } : { name: '', sex: '', country: detectCountry(), age: '', height: '', weight: '', goal: '', level: '', place: '', days: 3, activity: '1.375' },
   };
 }
 
@@ -96,10 +107,11 @@ function viewOnboarding() {
   const steps = {
     1: () => ({
       title: 'Comment tu t\'appelles ?', sub: 'Pour personnaliser ton expérience.',
-      ok: d.name.trim() && d.sex,
+      ok: d.name.trim() && d.sex && d.country,
       body: `<div class="field"><label>Prénom</label><input class="input" data-bind="name" value="${esc(d.name)}" placeholder="Ton prénom" autocomplete="given-name"></div>
         <div class="field"><label>Sexe (pour le calcul des besoins)</label><div class="grid2">
-        ${[['h', '👨', 'Homme'], ['f', '👩', 'Femme']].map(([v, i, l]) => `<button class="choice ${d.sex === v ? 'on' : ''}" data-act="ob-set" data-k="sex" data-v="${v}"><span class="ico">${i}</span><span class="t">${l}</span></button>`).join('')}</div></div>`,
+        ${[['h', '👨', 'Homme'], ['f', '👩', 'Femme']].map(([v, i, l]) => `<button class="choice ${d.sex === v ? 'on' : ''}" data-act="ob-set" data-k="sex" data-v="${v}"><span class="ico">${i}</span><span class="t">${l}</span></button>`).join('')}</div></div>
+        <div class="field"><label>Pays (pour te conseiller des produits vendus chez toi)</label><select class="input" data-bind="country">${Object.entries(D.COUNTRIES).map(([k, c]) => `<option value="${k}" ${d.country === k ? 'selected' : ''}>${c.flag} ${c.label}</option>`).join('')}</select></div>`,
     }),
     2: () => ({
       title: 'Tes mesures', sub: 'Elles servent à calculer tes calories, ton eau et ton IMC.',
@@ -161,7 +173,7 @@ function targetsFor(p) {
 
 function finishOnboarding() {
   const d = ui.ob.d;
-  const p = { name: d.name.trim(), sex: d.sex, age: +d.age, height: +d.height, weight: +d.weight, goal: d.goal, level: +d.level, place: d.place, days: +d.days, activity: String(d.activity), createdAt: S.profile?.createdAt || today() };
+  const p = { name: d.name.trim(), sex: d.sex, country: d.country || detectCountry(), age: +d.age, height: +d.height, weight: +d.weight, goal: d.goal, level: +d.level, place: d.place, days: +d.days, activity: String(d.activity), createdAt: S.profile?.createdAt || today() };
   const wasEdit = ui.ob.edit;
   S.profile = p;
   if (!S.weights.length || Math.abs(currentWeight() - p.weight) > 0.01) addWeight(p.weight);
@@ -856,6 +868,7 @@ function skinResult(r) {
   return `<div class="card"><div class="skin-score">${ring(r.score / 100, { size: 110, stroke: 11, color: 'var(--skin)', inner: `<div><div class="mid-num">${r.score}</div><div class="xs muted">/ 100</div></div>` })}
       <div class="grow"><div class="xs upper muted">Score de ta skincare</div><h2 style="margin-top:4px;font-size:18px">${r.verdict}</h2></div></div></div>
     ${skinAiCard(r)}
+    ${productsCard(r)}
     <div class="card section"><div class="xs upper muted">Ton type de peau</div><h2 style="margin-top:4px" class="color-skin">${T.label}</h2><p class="small muted" style="margin-top:6px;line-height:1.5">${T.desc}</p>
       ${r.concerns.length ? `<div class="row wrap" style="gap:6px;margin-top:12px">${r.concerns.map((c) => `<span class="pill">${D.SKIN_ISSUES[c]?.icon} ${D.SKIN_ISSUES[c]?.label}</span>`).join('')}</div>` : ''}</div>
     ${r.good.length ? `<div class="card section"><h3>✅ Ce que tu fais déjà bien</h3><ul class="list-plain" style="margin-top:10px">${r.good.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''}
@@ -889,7 +902,7 @@ function viewProfil() {
   const daysUsed = Object.keys(S.days).length;
   return `<div class="view">${header('Profil', { back: 'home' })}
     <div class="card row" style="gap:14px"><div class="avatar" style="width:60px;height:60px;font-size:24px">${esc(p.name[0]?.toUpperCase())}</div>
-      <div class="grow"><h2>${esc(p.name)}</h2><p class="small muted" style="margin-top:3px">${p.age} ans · ${p.height} cm · ${currentWeight().toFixed(1).replace('.', ',')} kg</p><p class="small" style="margin-top:3px">${D.GOALS[p.goal].icon} ${D.GOALS[p.goal].label}</p></div></div>
+      <div class="grow"><h2>${esc(p.name)}</h2><p class="small muted" style="margin-top:3px">${p.age} ans · ${p.height} cm · ${currentWeight().toFixed(1).replace('.', ',')} kg · ${countryInfo().flag} ${countryInfo().label}</p><p class="small" style="margin-top:3px">${D.GOALS[p.goal].icon} ${D.GOALS[p.goal].label}</p></div></div>
     <div class="section">${accountCard()}</div>
     <div class="section grid3"><div class="card center" style="padding:12px"><div class="mid-num">${daysUsed}</div><div class="xs muted">jours suivis</div></div><div class="card center" style="padding:12px"><div class="mid-num">${Object.values(S.days).filter((d) => d.workout).length}</div><div class="xs muted">séances</div></div><div class="card center" style="padding:12px"><div class="mid-num">${streak()}</div><div class="xs muted">jours de suite</div></div></div>
     <div class="section card"><h3>Mes objectifs quotidiens</h3>
@@ -1100,7 +1113,7 @@ function buildContext() {
   return {
     heure: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
     jour: DAY_NAMES[weekdayMon() - 1],
-    profil: { prenom: p.name, sexe: p.sex === 'f' ? 'femme' : 'homme', age: p.age, taille_cm: p.height, poids_kg: currentWeight(), objectif: D.GOALS[p.goal].label, niveau: D.LEVELS[p.level].label, lieu: p.place, seances_semaine: p.days },
+    profil: { prenom: p.name, pays: countryInfo().label, monnaie: countryInfo().cur, sexe: p.sex === 'f' ? 'femme' : 'homme', age: p.age, taille_cm: p.height, poids_kg: currentWeight(), objectif: D.GOALS[p.goal].label, niveau: D.LEVELS[p.level].label, lieu: p.place, seances_semaine: p.days },
     cibles: { kcal: t.kcal, proteines_g: t.prot, eau_ml: t.water, pas: t.steps, sommeil_h: 8 },
     aujourdhui: {
       eau_ml: d.water, pas: d.steps, sommeil: d.sleep ? { duree: fmtDur(d.sleep.minutes), qualite_sur_5: d.sleep.quality } : null,
@@ -1220,7 +1233,7 @@ async function runSkinAi(imageData) {
     const labels = {};
     D.SKIN_ROUTINE_Q.forEach((q) => { const a = ui.skin.answers[q.id]; if (q.opts[a]) labels[q.q] = q.opts[a][0]; });
     const feel = D.SKIN_FEEL_Q.opts.find(([k]) => k === ui.skin.feel)?.[1];
-    const r = await ai('skin', { image: imageData, answers: { ressenti_fin_de_journee: feel, zones_signalees: ui.skin.zones, routine: labels } });
+    const r = await ai('skin', { image: imageData, country: { label: countryInfo().label, currency: countryInfo().cur }, answers: { sexe: S.profile.sex === 'f' ? 'femme' : 'homme', age: S.profile.age, ressenti_fin_de_journee: feel, zones_signalees: ui.skin.zones, routine: labels } });
     S.skin.result = computeSkin(r);
     save();
     if (r.quality === 'bad') toast('Photo difficile à analyser, vois le conseil');
@@ -1407,6 +1420,50 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.closest?.('.modal') && (e.target.id === 'au-pass' || e.target.id === 'au-email')) A['auth-submit']();
 });
 
+
+/* ---------- Produits conseillés selon le pays ---------- */
+function productsCard(r) {
+  if (!cloud.enabled) return '';
+  const c = countryInfo();
+  const list = (r.ai && r.ai.products && r.ai.products.length ? r.ai.products : r.products) || [];
+  const head = `<div class="row between"><h3>🛍 Produits conseillés · ${c.flag} ${esc(c.label)}</h3></div>`;
+  if (ui.productsLoading) return `<div class="card section">${head}<div class="center" style="padding:18px 0"><div class="spin"></div><p class="small muted" style="margin-top:10px">Recherche de produits vendus en ${esc(c.label)}…</p></div></div>`;
+  if (!list.length) {
+    return `<div class="card section">${head}<p class="small muted" style="margin-top:6px;line-height:1.5">L'IA te propose des produits adaptés à ta peau et vendus dans ton pays (pharmacie, parapharmacie, grande surface), avec un prix indicatif.</p>
+      ${cloud.user ? `<button class="btn block" style="margin-top:12px;background:var(--skin);color:#1a0a12" data-act="skin-products">Voir les produits pour ma peau</button>` : `<button class="btn block" style="margin-top:12px" data-act="auth-open" data-mode="signup">Créer un compte pour les voir</button>`}</div>`;
+  }
+  const order = ['Nettoyant', 'Sérum', 'Traitement', 'Contour des yeux', 'Hydratant', 'Protection solaire', 'Masque'];
+  const sorted = [...list].sort((a, b) => (order.indexOf(a.etape) + 99) % 99 - (order.indexOf(b.etape) + 99) % 99);
+  return `<div class="card section">${head}
+    <div class="col" style="margin-top:12px;gap:0">${sorted.map((x) => `<div class="routine-step"><div class="grow">
+      <div class="row wrap" style="gap:6px"><span class="pill" style="padding:3px 9px;font-size:11px">${esc(x.etape)}</span>${x.budget ? `<span class="pill ${x.budget === 'petit prix' ? 'good' : ''}" style="padding:3px 9px;font-size:11px">${esc(x.budget)}</span>` : ''}</div>
+      <div style="font-weight:700;margin-top:7px">${esc(x.marque)} · ${esc(x.produit)}</div>
+      <p class="small muted" style="margin-top:3px;line-height:1.45">${esc(x.pourquoi)}</p>
+      <p class="xs" style="margin-top:5px;color:var(--text)">${x.prix ? `💰 ${esc(x.prix)}` : ''}${x.ou ? ` · 📍 ${esc(x.ou)}` : ''}</p></div></div>`).join('')}</div>
+    <p class="note" style="margin-top:10px">Suggestions de l'IA, à titre indicatif : vérifie la disponibilité, la composition et le prix sur place. All In n'est lié à aucune marque.</p>
+    ${cloud.user ? `<button class="btn sm ghost block" style="margin-top:10px" data-act="skin-products">↻ Proposer d'autres produits</button>` : ''}</div>`;
+}
+
+async function fetchProducts() {
+  const r = S.skin.result;
+  if (!r) return;
+  ui.productsLoading = true; rerender();
+  try {
+    const labels = {};
+    D.SKIN_ROUTINE_Q.forEach((q) => { const a = S.skin.answers?.[q.id]; if (q.opts[a]) labels[q.q] = q.opts[a][0]; });
+    const out = await ai('products', {
+      country: { label: countryInfo().label, currency: countryInfo().cur },
+      skin: { type: D.SKIN_TYPES[r.type]?.label, preoccupations: r.concerns.map((c) => D.SKIN_ISSUES[c]?.label), sexe: S.profile.sex === 'f' ? 'femme' : 'homme', age: S.profile.age, routine_actuelle: labels, analyse_ia: r.ai && r.ai.quality !== 'bad' ? r.ai.summary : null },
+      exclude: ((r.ai && r.ai.products) || r.products || []).map((x) => `${x.marque} ${x.produit}`),
+    });
+    if (r.ai) r.ai.products = out.products || []; else r.products = out.products || [];
+    save();
+  } catch (e) { toast(e.message); }
+  ui.productsLoading = false;
+  if (route().page === 'peau') rerender();
+}
+
+Object.assign(A, { 'skin-products': () => fetchProducts() });
 onSave(() => schedulePush());
 render();
 initCloud(() => rerender());
