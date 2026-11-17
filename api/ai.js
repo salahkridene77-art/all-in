@@ -145,17 +145,19 @@ function underLimit(uid) {
 async function gemini({ system, contents, schema, temperature = 0.6 }) {
   const key = process.env.GEMINI_API_KEY;
   // Modèle principal puis modèles de secours (quotas et charge séparés)
-  const models = [...new Set([process.env.GEMINI_MODEL || 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'])];
+  // Modèles testés avec la clé du projet (nov. 2026) : 2.5 fermé aux nouvelles clés, 3.5+ souvent saturés
+  const models = [...new Set([process.env.GEMINI_MODEL || 'gemini-3-flash-preview', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite'])];
   const deadline = Date.now() + 100000;
   let lastErr = { status: 502, msg: 'Aucun modèle disponible' };
   for (const model of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
       if (Date.now() > deadline - 8000) throw { status: 504, msg: 'L\'IA met trop de temps à répondre. Réessaie dans un instant.' };
-      const generationConfig = { temperature, maxOutputTokens: 4096 };
+      const legacy = model.startsWith('gemini-2.5');
+      // Gemini 3 : température par défaut recommandée, réflexion courte pour répondre vite
+      const generationConfig = { maxOutputTokens: 8192, ...(legacy ? { temperature, thinkingConfig: { thinkingBudget: 0 } } : { thinkingConfig: { thinkingLevel: 'low' } }) };
       if (schema) { generationConfig.responseMimeType = 'application/json'; generationConfig.responseSchema = schema; }
-      if (model.startsWith('gemini-2.5-flash')) generationConfig.thinkingConfig = { thinkingBudget: 0 };
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), Math.min(40000, deadline - Date.now()));
+      const timer = setTimeout(() => ctrl.abort(), Math.min(model === models[0] ? 45000 : 30000, deadline - Date.now()));
       let r;
       try {
         r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
