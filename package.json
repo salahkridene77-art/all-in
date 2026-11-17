@@ -1,0 +1,11 @@
+{
+  "name": "all-in",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "All In — sport, nutrition, sommeil, eau, pas et skincare. Front statique + fonction IA Vercel.",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

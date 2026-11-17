@@ -1,8 +1,8 @@
 /* All In — service worker : l'appli fonctionne même sans connexion */
-const CACHE = 'allin-v1.0.0';
+const CACHE = 'allin-v2.0.0';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/style.css',
-  './js/app.js', './js/core.js', './js/data.js',
+  './js/app.js', './js/core.js', './js/data.js', './js/cloud.js', './js/config.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon.svg',
 ];
 

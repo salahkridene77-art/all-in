@@ -441,11 +441,8 @@ export const SKIN_FEEL_Q = {
 };
 
 export const V2_FEATURES = [
-  ['🤖', 'Coach IA', 'Un coach qui adapte ta séance à ton sommeil, ton énergie et tes progrès'],
-  ['📸', 'Scan IA du visage', 'Analyse automatique de la peau à partir de la photo'],
-  ['🍽️', 'Photo de repas', 'Prends ton assiette en photo, les calories se remplissent seules'],
   ['⌚', 'Apple Santé / Google Fit', 'Pas et sommeil synchronisés automatiquement'],
-  ['☁️', 'Compte et synchronisation', 'Retrouve tes données sur tous tes appareils'],
   ['🔔', 'Rappels', 'Notifications pour boire, dormir et t\'entraîner'],
   ['🏆', 'Défis entre amis', 'Classements, badges et défis à plusieurs'],
+  ['📈', 'Bilans mensuels', 'Ton évolution du mois résumée par le coach'],
 ];

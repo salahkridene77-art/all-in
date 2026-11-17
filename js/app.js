@@ -5,8 +5,9 @@ import * as D from './data.js';
 import {
   S, save, resetAll, replaceState, today, day, peekDay, lastDays, dayLetter, addDays, parseKey, weekdayMon,
   DAY_SHORT, DAY_NAMES, prettyDate, shortDate, targets, bmi, currentWeight, dayNutrition, sleepMinutes, fmtDur,
-  buildPlan, todaySession, streak, dayScore, esc, fmt, ring, bar, barChart, lineChart, toast, openModal, closeModal, beep, pad,
+  buildPlan, todaySession, streak, dayScore, esc, fmt, ring, bar, barChart, lineChart, toast, openModal, closeModal, beep, pad, onSave,
 } from './core.js';
+import { cloud, initCloud, schedulePush, signUp, signIn, signInGoogle, resetPassword, signOutUser, authError, ai, pullAndMerge } from './cloud.js';
 
 const app = document.getElementById('app');
 const MEALS = ['Petit-déjeuner', 'Déjeuner', 'Dîner', 'Collation'];
@@ -15,6 +16,7 @@ const ui = {
   nutriTab: 'journal', recipeFilter: 'all', meal: 'Déjeuner', portion: 1, foodQ: '',
   ob: null, skin: { step: null, sel: null, photo: null, zones: {}, feel: null, answers: {}, camError: false },
   openSession: null, wk: null, cycleMode: 'bed', cycleTime: '23:00', lastRoute: '',
+  coachLoading: false, briefLoading: false, briefError: '', mealAi: null, authMode: 'login', pendingConsent: null,
 };
 
 /* ============================================================
@@ -40,7 +42,7 @@ function render() {
     if (!ui.ob) ui.ob = newOb(true);
     app.innerHTML = viewOnboarding();
   } else {
-    const views = { home: viewHome, sport: viewSport, wk: viewWorkout, nutrition: viewNutrition, suivi: () => viewSuivi(sub || 'eau'), peau: viewPeau, profil: viewProfil };
+    const views = { home: viewHome, sport: viewSport, wk: viewWorkout, coach: viewCoach, nutrition: viewNutrition, suivi: () => viewSuivi(sub || 'eau'), peau: viewPeau, profil: viewProfil };
     const v = views[page] || viewHome;
     const noNav = page === 'wk';
     app.innerHTML = v() + (noNav ? '' : nav(page));
@@ -51,13 +53,15 @@ function render() {
 const rerender = () => { const y = window.scrollY; render(); window.scrollTo(0, y); };
 
 function afterRender(page) {
+  if (page === 'coach' && ui.scrollChat) { ui.scrollChat = false; requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight)); }
+  if (page === 'home' && S.profile && cloud.user && (!S.brief || S.brief.date !== today()) && !ui.briefLoading && !ui.briefError) fetchBrief();
   if (page === 'peau' && ui.skin.step === 'photo' && !ui.skin.photo && !ui.skin.camError) startCamera();
   const q = document.getElementById('food-q');
   if (q && document.activeElement !== q && ui.focusFood) { q.focus(); ui.focusFood = false; }
 }
 
 function nav(page) {
-  const tabs = [['home', '🏠', 'Accueil'], ['sport', '🏋️', 'Sport'], ['nutrition', '🥗', 'Nutrition'], ['suivi', '📊', 'Suivi'], ['peau', '✨', 'Peau']];
+  const tabs = [['home', '🏠', 'Accueil'], ['sport', '🏋️', 'Sport'], ['coach', '🤖', 'Coach'], ['nutrition', '🥗', 'Nutrition'], ['suivi', '📊', 'Suivi'], ['peau', '✨', 'Peau']];
   return `<nav class="nav"><div class="nav-in">${tabs.map(([k, i, l]) => `<a href="#/${k}" class="${page === k || (k === 'home' && page === 'profil') ? 'on' : ''}"><span class="i">${i}</span>${l}</a>`).join('')}</div></nav>`;
 }
 
@@ -85,7 +89,8 @@ function viewOnboarding() {
         <p class="muted" style="margin-top:18px;font-size:17px;line-height:1.5;max-width:320px">Ton corps, ton rythme. Tout ce qu'il faut pour aller mieux, dans une seule appli.</p></div>
       <div><div class="feat"><div><span>🏋️</span>Programme</div><div><span>💧</span>Eau</div><div><span>😴</span>Sommeil</div><div><span>🥗</span>Calories</div><div><span>👟</span>Pas</div><div><span>✨</span>Skincare</div></div>
         <button class="btn primary block" data-act="ob-next">Commencer</button>
-        <p class="note center" style="margin-top:12px">Gratuit · Tes données restent sur ton téléphone</p></div></div>`;
+        ${cloud.enabled ? `<button class="btn ghost block" style="margin-top:10px" data-act="auth-open" data-mode="login">J'ai déjà un compte</button>` : ''}
+        <p class="note center" style="margin-top:12px">Gratuit · Fonctionne même sans compte</p></div></div>`;
   }
   const total = 6;
   const steps = {
@@ -206,6 +211,8 @@ function viewHome() {
         <div class="score-legend">${parts.map(([l, v, c]) => `<div class="l"><span>${l}</span>${bar(v, c)}<b>${Math.round(v * 100)}%</b></div>`).join('')}</div></div>
       <p class="small" style="margin-top:12px;font-weight:700">${verdict}</p></div>
 
+    <div class="section">${coachCard()}</div>
+
     <div class="section">${wk}</div>
 
     <div class="section grid2">
@@ -267,7 +274,8 @@ function viewSport() {
       <li>Garde 1 à 2 répétitions « en réserve » : la technique passe avant tout.</li>
       <li>Une douleur articulaire vive = on arrête l'exercice.</li>
       <li>Fin de séance : 5 min d'étirements doux et un grand verre d'eau.</li></ul></div>
-    <button class="btn ghost block section" data-act="edit-profile">Changer d'objectif ou de rythme</button></div>`;
+    <button class="btn block section" style="background:rgba(212,255,58,.1);color:var(--accent)" data-act="coach-ask" data-t="Adapte ma séance du jour à mon état de forme (sommeil, énergie, courbatures). Donne-moi la version adaptée.">🤖 Adapter ma séance avec le coach</button>
+    <button class="btn ghost block" style="margin-top:10px" data-act="edit-profile">Changer d'objectif ou de rythme</button></div>`;
 }
 
 function exerciseModal(id, extra = {}) {
@@ -403,6 +411,8 @@ function foodModal() {
   const list = D.FOODS.map((f, i) => ({ ...f, i })).filter((f) => !q || norm(f.n).includes(norm(q)));
   const cats = [...new Set(list.map((f) => f.c))];
   const html = `<div class="modal-head"><div><h2>Ajouter</h2><p class="small muted">${ui.meal}</p></div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    ${cloud.user ? `<label class="btn block ai-btn" style="margin-bottom:12px">📸 Photo de mon assiette <span class="pill on" style="padding:3px 8px">IA</span><input type="file" accept="image/*" capture="environment" data-on="meal-photo" hidden></label>`
+      : cloud.enabled ? `<button class="btn block ai-btn" style="margin-bottom:12px" data-act="need-login">📸 Photo de mon assiette <span class="pill" style="padding:3px 8px">IA · connexion</span></button>` : ''}
     <input id="food-q" class="input" data-on="food-search" placeholder="🔍 Rechercher un aliment…" value="${esc(ui.foodQ)}" autocomplete="off">
     <div class="field" style="margin-top:12px"><label>Quantité</label><div class="seg">${[[0.5, '½'], [1, '1'], [1.5, '1½'], [2, '2'], [3, '3']].map(([v, l]) => `<button class="${ui.portion === v ? 'on' : ''}" data-act="portion" data-v="${v}">${l}×</button>`).join('')}</div></div>
     <div class="food-list" id="food-list">${cats.map((c) => `<div class="cat xs upper muted">${c}</div>${list.filter((f) => f.c === c).map((f) => `<div class="food-pick" data-act="food-add" data-i="${f.i}"><div><div style="font-weight:600">${f.n}</div><div class="xs muted">${f.u} · ${f.p} g prot.</div></div><div class="row"><b class="small">${Math.round(f.k * ui.portion)} kcal</b><span class="icon-btn" style="width:32px;height:32px;font-size:16px;background:rgba(212,255,58,.12);color:var(--accent)">+</span></div></div>`).join('')}`).join('') || '<div class="empty"><div class="e">🔎</div>Aucun aliment trouvé. Ajoute-le en aliment perso ci-dessous.</div>'}</div>
@@ -414,7 +424,7 @@ function foodModal() {
 }
 
 function addFood(item) {
-  day().meals.push({ ...item, meal: ui.meal });
+  day().meals.push({ ...item, meal: ui.meal, at: Date.now() });
   save();
 }
 
@@ -686,7 +696,7 @@ function faceMap() {
   </svg>`;
 }
 
-function computeSkin() {
+function computeSkin(aiRes = null) {
   const sk = ui.skin, z = sk.zones;
   const all = (k) => z[k] || [];
   let type = { brille_tout: 'grasse', brille_t: 'mixte', tiraille: 'seche', confort: 'normale', reagit: 'sensible' }[sk.feel] || 'normale';
@@ -700,6 +710,7 @@ function computeSkin() {
   if (sk.feel === 'brille_tout' || sk.feel === 'brille_t') concerns.add('brillance');
   if (sk.feel === 'tiraille') concerns.add('secheresse');
   if (sk.feel === 'reagit') concerns.add('rougeurs');
+  if (aiRes && aiRes.quality !== 'bad') (aiRes.observations || []).forEach((o) => { if (D.SKIN_ISSUES[o.issue]) concerns.add(o.issue); });
 
   let score = 0;
   const good = [], improve = [];
@@ -747,7 +758,7 @@ function computeSkin() {
 
   score = Math.round(score);
   const verdict = score >= 75 ? 'Ta skincare est déjà solide 👏' : score >= 50 ? 'Bonne base, quelques ajustements à faire' : 'Ta routine a besoin d\'un coup de boost';
-  return { date: today(), type, concerns: [...concerns], score, verdict, good: good.filter(Boolean), improve, routine, use: [...use].slice(0, 10), avoid: [...avoid].slice(0, 9), why };
+  return { date: today(), ai: aiRes, type, concerns: [...concerns], score, verdict, good: good.filter(Boolean), improve, routine, use: [...use].slice(0, 10), avoid: [...avoid].slice(0, 9), why };
 }
 
 function finishSkin() {
@@ -759,6 +770,11 @@ function finishSkin() {
     S.skin.photos = S.skin.photos.slice(-6);
   }
   save();
+  if (ui.skin.photo && cloud.user) {
+    const data = ui.skin.photo.data;
+    withConsent(() => runSkinAi(data), () => { ui.skin.step = 'result'; rerender(); });
+    return;
+  }
   ui.skin.step = 'result';
   rerender();
 }
@@ -772,6 +788,7 @@ function viewPeau() {
   else if (sk.step === 'zones') body = skinZones();
   else if (sk.step === 'questions') body = skinQuestions();
   else if (sk.step === 'result') body = skinResult(S.skin.result);
+  else if (sk.step === 'analyzing') body = `<div class="card center" style="padding:40px 20px"><div class="spin"></div><h3 style="margin-top:16px">Analyse de ta photo…</h3><p class="small muted" style="margin-top:6px">L'IA examine ta peau zone par zone. Quelques secondes.</p></div>`;
   else body = skinHome();
   const back = sk.step ? `<button class="back" data-act="skin-back" aria-label="Retour">←</button>` : '';
   return `<div class="view"><div class="top">${back}<h1 class="grow">${sk.step === 'result' ? 'Ton analyse' : 'Peau'}</h1>${stepIdx ? `<span class="small muted">Étape ${stepIdx}/3</span>` : ''}</div>${ind}${body}</div>`;
@@ -789,7 +806,7 @@ function skinHome() {
     ${photos.length ? `<div class="section"><div class="section-title"><h2>Journal photo</h2><span class="small muted">${photos.length} photo${photos.length > 1 ? 's' : ''}</span></div>
       <div class="photo-strip">${[...photos].reverse().map((p) => `<figure><img src="${p.data}" alt="Photo du ${shortDate(p.date)}"><figcaption>${shortDate(p.date)}</figcaption></figure>`).join('')}</div>
       <p class="note" style="margin-top:8px">Refais une photo toutes les 2 à 4 semaines, avec la même lumière, pour voir l'évolution.</p></div>` : ''}
-    <div class="section card flat" style="background:var(--card2)"><p class="small"><b>🤖 Bientôt :</b> analyse automatique de la photo par IA dans la V2.</p></div>`;
+    <div class="section card flat" style="background:var(--card2)"><p class="small"><b>🤖 Analyse IA :</b> ${cloud.user ? 'ta photo est analysée automatiquement à la fin du scan.' : 'crée un compte pour faire analyser ta photo par l\'IA.'}</p></div>`;
 }
 
 function skinPhoto() {
@@ -838,6 +855,7 @@ function skinResult(r) {
   const avgSleep = sleeps.length ? sleeps.reduce((a, b) => a + b, 0) / sleeps.length : null;
   return `<div class="card"><div class="skin-score">${ring(r.score / 100, { size: 110, stroke: 11, color: 'var(--skin)', inner: `<div><div class="mid-num">${r.score}</div><div class="xs muted">/ 100</div></div>` })}
       <div class="grow"><div class="xs upper muted">Score de ta skincare</div><h2 style="margin-top:4px;font-size:18px">${r.verdict}</h2></div></div></div>
+    ${skinAiCard(r)}
     <div class="card section"><div class="xs upper muted">Ton type de peau</div><h2 style="margin-top:4px" class="color-skin">${T.label}</h2><p class="small muted" style="margin-top:6px;line-height:1.5">${T.desc}</p>
       ${r.concerns.length ? `<div class="row wrap" style="gap:6px;margin-top:12px">${r.concerns.map((c) => `<span class="pill">${D.SKIN_ISSUES[c]?.icon} ${D.SKIN_ISSUES[c]?.label}</span>`).join('')}</div>` : ''}</div>
     ${r.good.length ? `<div class="card section"><h3>✅ Ce que tu fais déjà bien</h3><ul class="list-plain" style="margin-top:10px">${r.good.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''}
@@ -872,17 +890,18 @@ function viewProfil() {
   return `<div class="view">${header('Profil', { back: 'home' })}
     <div class="card row" style="gap:14px"><div class="avatar" style="width:60px;height:60px;font-size:24px">${esc(p.name[0]?.toUpperCase())}</div>
       <div class="grow"><h2>${esc(p.name)}</h2><p class="small muted" style="margin-top:3px">${p.age} ans · ${p.height} cm · ${currentWeight().toFixed(1).replace('.', ',')} kg</p><p class="small" style="margin-top:3px">${D.GOALS[p.goal].icon} ${D.GOALS[p.goal].label}</p></div></div>
+    <div class="section">${accountCard()}</div>
     <div class="section grid3"><div class="card center" style="padding:12px"><div class="mid-num">${daysUsed}</div><div class="xs muted">jours suivis</div></div><div class="card center" style="padding:12px"><div class="mid-num">${Object.values(S.days).filter((d) => d.workout).length}</div><div class="xs muted">séances</div></div><div class="card center" style="padding:12px"><div class="mid-num">${streak()}</div><div class="xs muted">jours de suite</div></div></div>
     <div class="section card"><h3>Mes objectifs quotidiens</h3>
       ${[['🍽️', 'Calories', `${fmt(t.kcal)} kcal`], ['🥩', 'Protéines', `${t.prot} g`], ['💧', 'Eau', `${(t.water / 1000).toFixed(1).replace('.', ',')} L`], ['👟', 'Pas', fmt(t.steps)], ['😴', 'Sommeil', '8 h'], ['🏋️', 'Sport', `${p.days} séances / semaine`]].map(([i, l, v]) => `<div class="food-item"><span>${i}</span><div class="grow">${l}</div><b>${v}</b></div>`).join('')}
       <button class="btn block" style="margin-top:12px" data-act="edit-profile">Modifier mon profil</button></div>
     ${standalone ? '' : `<div class="section card"><h3>📲 Installer l'appli</h3><p class="small muted" style="margin-top:6px;line-height:1.5">${ios ? 'Sur iPhone : touche le bouton Partager de Safari, puis « Sur l\'écran d\'accueil ».' : 'Ajoute All In sur ton écran d\'accueil pour l\'ouvrir comme une vraie appli.'}</p>
       ${!ios ? `<button class="btn primary block" style="margin-top:12px" data-act="install">Installer</button>` : ''}</div>`}
-    <div class="section card"><h3>Bientôt dans la V2</h3><div class="col" style="margin-top:10px;gap:12px">${D.V2_FEATURES.map(([i, t1, d1]) => `<div class="row" style="align-items:flex-start"><span style="font-size:20px">${i}</span><div><b class="small">${t1}</b><p class="xs muted" style="margin-top:2px">${d1}</p></div></div>`).join('')}</div></div>
-    <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">Tout est enregistré sur ce téléphone, rien n'est envoyé sur internet. Exporte une sauvegarde avant de changer d'appareil.</p>
+    <div class="section card"><h3>Bientôt dans All In</h3><div class="col" style="margin-top:10px;gap:12px">${D.V2_FEATURES.map(([i, t1, d1]) => `<div class="row" style="align-items:flex-start"><span style="font-size:20px">${i}</span><div><b class="small">${t1}</b><p class="xs muted" style="margin-top:2px">${d1}</p></div></div>`).join('')}</div></div>
+    <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">${cloud.user ? 'Tes données sont sur ce téléphone et sauvegardées dans ton compte. Les photos de peau restent uniquement sur ce téléphone.' : 'Tout est enregistré sur ce téléphone. Crée un compte pour les sauvegarder, ou exporte une copie avant de changer d\'appareil.'}</p>
       <div class="row" style="margin-top:12px"><button class="btn grow sm" data-act="export">⬇ Exporter</button><label class="btn grow sm" style="cursor:pointer">⬆ Importer<input type="file" accept="application/json,.json" data-on="import" hidden></label></div>
       <button class="btn danger block sm" style="margin-top:8px" data-act="reset">Effacer toutes mes données</button></div>
-    <p class="note center section">All In · V1</p></div>`;
+    <p class="note center section">All In · V2</p></div>`;
 }
 
 /* ============================================================
@@ -1018,7 +1037,7 @@ const A = {
   },
   reset: () => openModal(`<h2>Tout effacer ?</h2><p class="muted small" style="margin-top:6px">Profil, suivis, repas, photos : tout sera supprimé de ce téléphone. Cette action est définitive.</p>
     <div class="row" style="margin-top:18px"><button class="btn grow" data-act="close-modal">Annuler</button><button class="btn danger grow" data-act="reset-ok">Tout effacer</button></div>`),
-  'reset-ok': () => { closeModal(); resetAll(); ui.ob = null; location.hash = '#/home'; render(); },
+  'reset-ok': async () => { closeModal(); if (cloud.user) { try { await signOutUser(); } catch { /* ignore */ } } resetAll(); ui.ob = null; location.hash = '#/home'; render(); },
 };
 
 const INPUTS = {
@@ -1072,4 +1091,322 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
+/* ============================================================
+   V2 — Coach IA, comptes, analyse IA (peau et repas)
+   ============================================================ */
+function buildContext() {
+  const p = S.profile, t = targets(), d = peekDay(today()), n = dayNutrition();
+  const ses = todaySession();
+  return {
+    heure: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+    jour: DAY_NAMES[weekdayMon() - 1],
+    profil: { prenom: p.name, sexe: p.sex === 'f' ? 'femme' : 'homme', age: p.age, taille_cm: p.height, poids_kg: currentWeight(), objectif: D.GOALS[p.goal].label, niveau: D.LEVELS[p.level].label, lieu: p.place, seances_semaine: p.days },
+    cibles: { kcal: t.kcal, proteines_g: t.prot, eau_ml: t.water, pas: t.steps, sommeil_h: 8 },
+    aujourdhui: {
+      eau_ml: d.water, pas: d.steps, sommeil: d.sleep ? { duree: fmtDur(d.sleep.minutes), qualite_sur_5: d.sleep.quality } : null,
+      kcal: n.kcal, proteines_g: n.p, repas: d.meals.slice(0, 15).map((m) => `${m.meal}: ${m.n} (${Math.round(m.k)} kcal)`),
+      seance_prevue: ses ? { nom: ses.name, exercices: ses.exercises.map((e) => `${e.name} ${e.sets}x${e.target}`) } : 'repos',
+      seance_faite: !!d.workout,
+    },
+    semaine: lastDays(7).map((k) => { const x = peekDay(k), nn = dayNutrition(k); return { date: k, eau_ml: x.water, pas: x.steps, sommeil_h: x.sleep ? +(x.sleep.minutes / 60).toFixed(1) : null, kcal: nn.kcal || null, seance: !!x.workout }; }),
+    poids_recents: S.weights.slice(-5),
+    peau: S.skin.result ? { type: S.skin.result.type, score_routine: S.skin.result.score, preoccupations: S.skin.result.concerns } : null,
+  };
+}
+
+const md = (t) => esc(t)
+  .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+  .replace(/^\s*[-•*] (.+)$/gm, '<span class="li">$1</span>')
+  .replace(/\n/g, '<br>')
+  .replace(/<br>(<span class="li">)/g, '$1').replace(/(<\/span>)<br>/g, '$1');
+
+async function fetchBrief() {
+  ui.briefLoading = true;
+  try {
+    const r = await ai('brief', { context: buildContext() });
+    S.brief = { ...r, date: today() };
+    save();
+  } catch (e) { ui.briefError = e.message; }
+  ui.briefLoading = false;
+  if (route().page === 'home') rerender();
+}
+
+function coachCard() {
+  if (!cloud.enabled) return '';
+  if (!cloud.user) {
+    return `<div class="card coach-card"><div class="row" style="align-items:flex-start"><div class="coach-av">🤖</div><div class="grow"><div class="xs upper muted">Ton coach IA</div>
+      <p style="margin-top:5px;line-height:1.5">Crée ton compte gratuit pour activer ton coach : brief du jour, séances adaptées, analyse de tes repas et de ta peau.</p></div></div>
+      <button class="btn primary block" style="margin-top:14px" data-act="auth-open" data-mode="signup">Créer mon compte</button></div>`;
+  }
+  const b = S.brief && S.brief.date === today() ? S.brief : null;
+  if (!b) {
+    return `<div class="card coach-card"><div class="row" style="align-items:flex-start"><div class="coach-av">🤖</div><div class="grow"><div class="xs upper muted">Brief du coach</div>
+      ${ui.briefError ? `<p class="small muted" style="margin-top:6px">${esc(ui.briefError)}</p><button class="btn sm" style="margin-top:10px" data-act="brief-retry">Réessayer</button>` : '<div class="skel" style="margin-top:8px"></div><div class="skel" style="width:70%"></div>'}</div></div></div>`;
+  }
+  return `<div class="card coach-card tap" data-act="go" data-to="coach"><div class="row" style="align-items:flex-start"><div class="coach-av">🤖</div><div class="grow"><div class="xs upper muted">Brief du coach</div>
+    <h3 style="margin-top:4px">${esc(b.title)}</h3><p class="small" style="margin-top:6px;line-height:1.5;color:var(--muted)">${esc(b.message)}</p>
+    <div class="coach-action">🎯 ${esc(b.action)}</div></div></div>
+    <div class="row between" style="margin-top:12px"><span class="small" style="color:var(--accent);font-weight:700">Discuter avec le coach ›</span></div></div>`;
+}
+
+const COACH_SUGGESTIONS = [
+  'Adapte ma séance du jour à mon état de forme',
+  'Que manger ce soir pour mon objectif ?',
+  'J\'ai mal dormi, je fais quoi aujourd\'hui ?',
+  'Pourquoi je ne progresse pas ?',
+  'Donne-moi une idée de collation healthy',
+];
+
+function viewCoach() {
+  const head = header('Coach', { right: (S.coach || []).length && cloud.user ? '<button class="btn sm ghost" data-act="coach-clear">Effacer</button>' : '' });
+  if (!cloud.enabled) {
+    return `<div class="view">${head}<div class="card center" style="padding:30px 18px"><div style="font-size:44px">🤖</div><h2 style="margin-top:10px">Ton coach arrive bientôt</h2><p class="small muted" style="margin-top:8px;line-height:1.5">Le coach IA sera activé dès que le serveur sera configuré.</p></div></div>`;
+  }
+  if (!cloud.user) {
+    return `<div class="view">${head}<div class="card coach-card" style="padding:24px 18px"><div style="font-size:44px">🤖</div><h2 style="margin-top:10px">Un coach rien que pour toi</h2>
+      <ul class="list-plain" style="margin-top:12px"><li>Il connaît ton objectif, ton sommeil, ton eau, tes pas et tes repas</li><li>Il adapte ta séance quand tu es fatigué ou courbaturé</li><li>Il répond à tes questions sport, nutrition et bien-être</li></ul>
+      <button class="btn primary block" style="margin-top:18px" data-act="auth-open" data-mode="signup">Créer mon compte gratuit</button>
+      <button class="btn ghost block" style="margin-top:8px" data-act="auth-open" data-mode="login">J'ai déjà un compte</button></div></div>`;
+  }
+  const msgs = S.coach || [];
+  const bubbles = msgs.map((m) => `<div class="bubble ${m.role === 'user' ? 'me' : 'ai'}">${m.role === 'user' ? esc(m.text).replace(/\n/g, '<br>') : md(m.text)}</div>`).join('');
+  const intro = `<div class="bubble ai">Salut ${esc(S.profile.name)} 👋 Je suis ton coach All In. Je vois tes chiffres du jour et de la semaine. Pose-moi une question, ou choisis une idée ci-dessous.</div>`;
+  return `<div class="view coach-view">${head}
+    <div class="chat">${intro}${bubbles}${ui.coachLoading ? '<div class="bubble ai typing"><i></i><i></i><i></i></div>' : ''}</div>
+    ${!msgs.length || !ui.coachLoading ? `<div class="chips" style="margin-top:14px">${COACH_SUGGESTIONS.map((t) => `<button class="chip" data-act="coach-ask" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div>` : ''}
+    <p class="note" style="margin-top:12px">Le coach donne des conseils généraux, il ne remplace pas un médecin.</p>
+    <div class="composer"><div class="composer-in"><textarea id="coach-in" rows="1" placeholder="Écris au coach…" data-on="coach-grow"></textarea><button class="send" data-act="coach-send" aria-label="Envoyer" ${ui.coachLoading ? 'disabled' : ''}>➤</button></div></div></div>`;
+}
+
+async function sendCoach(text) {
+  text = String(text || '').trim();
+  if (!text || ui.coachLoading) return;
+  if (!cloud.user) return authModal('signup');
+  S.coach = S.coach || [];
+  S.coach.push({ role: 'user', text, at: Date.now() });
+  S.coach = S.coach.slice(-60);
+  save();
+  ui.coachLoading = true; ui.scrollChat = true;
+  if (route().page === 'coach') rerender(); else go('coach');
+  try {
+    const r = await ai('coach', { messages: S.coach.slice(-16).map(({ role, text: t }) => ({ role, text: t })), context: buildContext() });
+    S.coach.push({ role: 'ai', text: r.text, at: Date.now() });
+    save();
+  } catch (e) {
+    S.coach.push({ role: 'ai', text: `⚠️ ${e.message}`, at: Date.now(), err: true });
+  }
+  ui.coachLoading = false; ui.scrollChat = true;
+  if (route().page === 'coach') render();
+}
+
+/* ---------- Consentement avant d'envoyer une photo à l'IA ---------- */
+function withConsent(onOk, onCancel = () => {}) {
+  if (S.settings?.aiPhotoConsent) return onOk();
+  ui.pendingConsent = { onOk, onCancel };
+  openModal(`<h2>Envoyer la photo à l'IA ?</h2>
+    <p class="small muted" style="margin-top:10px;line-height:1.55">Pour l'analyser, ta photo est envoyée à <b>Google Gemini</b>. All In ne la conserve pas sur ses serveurs. Sur l'offre gratuite de Gemini, Google peut utiliser les contenus reçus pour améliorer ses services.</p>
+    <p class="small muted" style="margin-top:8px;line-height:1.55">Tu peux refuser : l'appli reste utilisable sans analyse IA.</p>
+    <div class="row" style="margin-top:18px"><button class="btn grow" data-act="consent-no">Non merci</button><button class="btn primary grow" data-act="consent-yes">J'accepte</button></div>`);
+}
+
+/* ---------- Peau : analyse IA ---------- */
+async function runSkinAi(imageData) {
+  if (!ui.skin.answers || !Object.keys(ui.skin.answers).length) {
+    ui.skin = { ...ui.skin, zones: JSON.parse(JSON.stringify(S.skin.zones || {})), feel: S.skin.feel, answers: { ...S.skin.answers } };
+  }
+  ui.skin.step = 'analyzing';
+  rerender();
+  try {
+    const labels = {};
+    D.SKIN_ROUTINE_Q.forEach((q) => { const a = ui.skin.answers[q.id]; if (q.opts[a]) labels[q.q] = q.opts[a][0]; });
+    const feel = D.SKIN_FEEL_Q.opts.find(([k]) => k === ui.skin.feel)?.[1];
+    const r = await ai('skin', { image: imageData, answers: { ressenti_fin_de_journee: feel, zones_signalees: ui.skin.zones, routine: labels } });
+    S.skin.result = computeSkin(r);
+    save();
+    if (r.quality === 'bad') toast('Photo difficile à analyser, vois le conseil');
+  } catch (e) {
+    toast(e.message);
+  }
+  ui.skin.step = 'result';
+  if (route().page === 'peau') rerender();
+}
+
+function skinAiCard(r) {
+  const lastPhoto = S.skin.photos[S.skin.photos.length - 1];
+  if (!r.ai) {
+    if (!lastPhoto || !cloud.enabled) return '';
+    return `<div class="card section ai-card"><div class="row"><span style="font-size:24px">🤖</span><div class="grow"><h3>Analyse IA de ta photo</h3><p class="small muted" style="margin-top:3px">L'IA examine ta peau zone par zone et affine tes conseils.</p></div></div>
+      ${cloud.user ? `<button class="btn block" style="margin-top:12px;background:var(--skin);color:#1a0a12" data-act="skin-ai">Analyser ma dernière photo</button>` : `<button class="btn block" style="margin-top:12px" data-act="auth-open" data-mode="signup">Créer un compte pour l'activer</button>`}</div>`;
+  }
+  const a = r.ai;
+  const lvl = { 'léger': 'good', 'modéré': 'warn', 'marqué': 'bad' };
+  return `<div class="card section ai-card"><div class="row between"><h3>🤖 Analyse IA de ta photo</h3>${a.quality !== 'good' ? `<span class="pill warn">Photo ${a.quality === 'bad' ? 'inexploitable' : 'moyenne'}</span>` : ''}</div>
+    ${a.qualityNote ? `<p class="small" style="margin-top:8px;color:var(--food)">${esc(a.qualityNote)}</p>` : ''}
+    ${a.quality !== 'bad' ? `<p style="margin-top:10px;line-height:1.5">${esc(a.summary)}</p>
+      <p class="small muted" style="margin-top:8px">Type de peau estimé par l'IA : <b style="color:var(--text)">${D.SKIN_TYPES[a.skinType]?.label || '—'}</b></p>
+      ${(a.observations || []).length ? `<div class="col" style="margin-top:12px;gap:8px">${a.observations.map((o) => `<div class="row" style="align-items:flex-start"><span>${D.SKIN_ISSUES[o.issue]?.icon || '•'}</span><div class="grow small"><b>${D.SKIN_ZONES[o.zone] || o.zone}</b> · ${D.SKIN_ISSUES[o.issue]?.label || o.issue} <span class="pill ${lvl[o.level] || ''}" style="padding:2px 8px;font-size:11px">${esc(o.level)}</span>${o.note ? `<div class="xs muted" style="margin-top:2px">${esc(o.note)}</div>` : ''}</div></div>`).join('')}</div>` : '<p class="small" style="margin-top:10px;color:var(--steps)">Aucun problème visible repéré 👌</p>'}
+      ${(a.tips || []).length ? `<div class="divider"></div><div class="xs upper muted">Conseils de l'IA</div><ul class="list-plain" style="margin-top:8px">${a.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+      ${a.seeDoctor ? `<div class="card flat" style="background:rgba(255,93,93,.1);margin-top:12px"><p class="small" style="color:var(--danger)"><b>À montrer à un dermatologue :</b> ${esc(a.seeDoctorReason || 'une zone mérite l\'avis d\'un professionnel.')}</p></div>` : ''}` : ''}
+    ${lastPhoto && cloud.user ? `<button class="btn sm ghost block" style="margin-top:12px" data-act="skin-ai">↻ Relancer l'analyse</button>` : ''}</div>`;
+}
+
+/* ---------- Photo de repas ---------- */
+function compressImage(file, max = 768) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = reject;
+    r.onload = () => {
+      const im = new Image();
+      im.onerror = reject;
+      im.onload = () => {
+        const k = Math.min(1, max / Math.max(im.width, im.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.75));
+      };
+      im.src = r.result;
+    };
+    r.readAsDataURL(file);
+  });
+}
+
+function mealModal() {
+  const m = ui.mealAi;
+  let body;
+  if (m.loading) body = `<div class="center" style="padding:24px 0"><div class="spin"></div><p class="small muted" style="margin-top:14px">L'IA reconnaît les aliments…</p></div>`;
+  else if (m.error) body = `<p class="small" style="color:var(--danger);margin-top:6px">${esc(m.error)}</p><button class="btn block" style="margin-top:12px" data-act="food-back">Retour</button>`;
+  else if (!m.isFood || !m.items.length) body = `<div class="empty"><div class="e">🤔</div>Je ne vois pas de nourriture sur cette photo. Réessaie avec l'assiette bien visible.</div><button class="btn block" data-act="food-back">Retour</button>`;
+  else {
+    const tot = m.items.reduce((a, x) => a + (x.sel ? x.kcal * x.mult : 0), 0);
+    body = `<div class="col" style="gap:0;margin-top:4px">${m.items.map((x, i) => `<div class="food-item"><button class="chk ${x.sel ? 'on' : ''}" data-act="meal-toggle" data-i="${i}" aria-label="Sélectionner">${x.sel ? '✓' : ''}</button>
+        <div class="grow"><div style="font-weight:600">${esc(x.name)}</div><div class="xs muted">${esc(x.portion)}${x.grams ? ` · ~${Math.round(x.grams * x.mult)} g` : ''} · ${Math.round(x.p * x.mult)} g prot.</div></div>
+        <div class="row" style="gap:4px"><button class="mini" data-act="meal-mult" data-i="${i}" data-d="-0.5">−</button><b class="small" style="min-width:58px;text-align:center">${Math.round(x.kcal * x.mult)} kcal</b><button class="mini" data-act="meal-mult" data-i="${i}" data-d="0.5">+</button></div></div>`).join('')}</div>
+      ${m.comment ? `<div class="card flat" style="background:var(--card2);margin-top:12px"><p class="small">💡 ${esc(m.comment)}</p></div>` : ''}
+      <p class="note" style="margin-top:10px">Estimation de l'IA : ajuste les portions avec − et + si besoin.</p>
+      <button class="btn primary block" style="margin-top:14px" data-act="meal-add" ${tot ? '' : 'disabled'}>Ajouter ${fmt(tot)} kcal au ${ui.meal.toLowerCase()}</button>`;
+  }
+  const html = `<div class="modal-head"><div><h2>Photo de repas</h2><p class="small muted">${ui.meal}</p></div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    ${m.img ? `<img src="${m.img}" alt="" style="width:100%;max-height:220px;object-fit:cover;border-radius:18px;margin-bottom:12px">` : ''}${body}`;
+  const el = document.querySelector('.modal');
+  if (el) el.innerHTML = '<div class="grab"></div>' + html; else openModal(html);
+}
+
+async function analyseMeal(img) {
+  ui.mealAi = { loading: true, img };
+  mealModal();
+  try {
+    const r = await ai('meal', { image: img });
+    ui.mealAi = { img, isFood: r.isFood, comment: r.comment, items: (r.items || []).map((x) => ({ ...x, sel: true, mult: 1 })) };
+  } catch (e) { ui.mealAi = { img, error: e.message }; }
+  if (document.querySelector('.modal')) mealModal();
+}
+
+/* ---------- Compte ---------- */
+function accountCard() {
+  if (!cloud.enabled) return `<div class="card"><h3>☁️ Compte</h3><p class="small muted" style="margin-top:6px">Les comptes et l'IA seront activés très bientôt.</p></div>`;
+  if (!cloud.user) {
+    return `<div class="card coach-card"><h3>☁️ Crée ton compte gratuit</h3><p class="small muted" style="margin-top:6px;line-height:1.5">Sauvegarde tes données, retrouve-les sur tous tes appareils et active le coach IA, le scan IA du visage et la photo de repas.</p>
+      <div class="row" style="margin-top:12px"><button class="btn primary grow" data-act="auth-open" data-mode="signup">Créer un compte</button><button class="btn grow" data-act="auth-open" data-mode="login">Se connecter</button></div></div>`;
+  }
+  const ago = cloud.lastSync ? Math.round((Date.now() - cloud.lastSync) / 60000) : null;
+  return `<div class="card"><div class="row between"><div class="grow"><div class="xs upper muted">Compte</div><div style="font-weight:700;margin-top:3px;word-break:break-all">${esc(cloud.user.email || cloud.user.name || 'Connecté')}</div></div><span class="pill ${cloud.error ? 'warn' : 'good'}">${cloud.syncing ? '⟳ Synchro…' : cloud.error ? '⚠️ Hors ligne' : '✓ Synchronisé'}</span></div>
+    <p class="xs muted" style="margin-top:6px">${cloud.error ? esc(cloud.error) : ago === null ? 'Synchronisation automatique activée' : ago < 1 ? 'Dernière synchro : à l\'instant' : `Dernière synchro : il y a ${ago} min`}</p>
+    <div class="row" style="margin-top:12px"><button class="btn sm grow" data-act="sync-now">⟳ Synchroniser</button><button class="btn sm ghost grow" data-act="sign-out">Se déconnecter</button></div></div>`;
+}
+
+function authModal(mode = 'login', err = '') {
+  ui.authMode = mode;
+  const signup = mode === 'signup';
+  const html = `<div class="modal-head"><h2>${signup ? 'Créer ton compte' : 'Connexion'}</h2><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <p class="small muted" style="margin-bottom:14px">${signup ? 'Gratuit. Tes données actuelles seront sauvegardées dans ton compte.' : 'Retrouve ton programme et ton suivi.'}</p>
+    <button class="btn block google-btn" data-act="auth-google"><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Continuer avec Google</button>
+    <div class="or"><span>ou</span></div>
+    <div class="col"><input id="au-email" class="input" type="email" inputmode="email" autocomplete="email" placeholder="Adresse e-mail">
+      <input id="au-pass" class="input" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="Mot de passe${signup ? ' (6 caractères min.)' : ''}"></div>
+    <p id="au-err" class="small" style="color:var(--danger);margin-top:10px;min-height:1em">${esc(err)}</p>
+    <button class="btn primary block" style="margin-top:6px" data-act="auth-submit">${signup ? 'Créer mon compte' : 'Se connecter'}</button>
+    ${signup ? '' : '<button class="btn sm ghost block" style="margin-top:8px" data-act="auth-forgot">Mot de passe oublié ?</button>'}
+    <p class="small center muted" style="margin-top:14px">${signup ? 'Déjà un compte ?' : 'Pas encore de compte ?'} <button style="color:var(--accent);font-weight:700" data-act="auth-open" data-mode="${signup ? 'login' : 'signup'}">${signup ? 'Se connecter' : 'Créer un compte'}</button></p>`;
+  const el = document.querySelector('.modal');
+  if (el) el.innerHTML = '<div class="grab"></div>' + html; else openModal(html);
+}
+
+async function doAuth(fn) {
+  const btns = document.querySelectorAll('.modal .btn');
+  btns.forEach((b) => { b.disabled = true; });
+  try {
+    await fn();
+    closeModal();
+    toast('Connecté ✓ Synchronisation…');
+  } catch (e) {
+    const el = document.getElementById('au-err');
+    if (el) el.textContent = authError(e);
+    btns.forEach((b) => { b.disabled = false; });
+  }
+}
+
+Object.assign(A, {
+  'auth-open': (el) => authModal(el.dataset.mode || 'login'),
+  'need-login': () => authModal('signup'),
+  'auth-submit': () => {
+    const email = document.getElementById('au-email').value.trim(), pass = document.getElementById('au-pass').value;
+    if (!email || !pass) { document.getElementById('au-err').textContent = 'Remplis l\'e-mail et le mot de passe.'; return; }
+    doAuth(() => (ui.authMode === 'signup' ? signUp(email, pass) : signIn(email, pass)));
+  },
+  'auth-google': () => doAuth(() => signInGoogle()),
+  'auth-forgot': async () => {
+    const email = document.getElementById('au-email').value.trim();
+    const err = document.getElementById('au-err');
+    if (!email) { err.textContent = 'Entre ton e-mail ci-dessus, puis touche à nouveau « Mot de passe oublié ».'; return; }
+    try { await resetPassword(email); err.style.color = 'var(--steps)'; err.textContent = 'E-mail de réinitialisation envoyé ✓'; }
+    catch (e) { err.textContent = authError(e); }
+  },
+  'sign-out': async () => { await signOutUser(); toast('Déconnecté'); rerender(); },
+  'sync-now': async () => { await pullAndMerge(); toast(cloud.error || 'Synchronisé ✓'); rerender(); },
+  'brief-retry': () => { ui.briefError = ''; fetchBrief(); rerender(); },
+
+  'coach-send': () => { const t = document.getElementById('coach-in'); if (t) sendCoach(t.value); },
+  'coach-ask': (el) => sendCoach(el.dataset.t),
+  'coach-clear': () => openModal(`<h2>Effacer la discussion ?</h2><p class="small muted" style="margin-top:6px">Le coach gardera l'accès à tes données, seule la conversation est supprimée.</p>
+    <div class="row" style="margin-top:18px"><button class="btn grow" data-act="close-modal">Annuler</button><button class="btn danger grow" data-act="coach-clear-ok">Effacer</button></div>`),
+  'coach-clear-ok': () => { S.coach = []; save(); closeModal(); rerender(); },
+
+  'consent-yes': () => { S.settings = { ...(S.settings || {}), aiPhotoConsent: true }; save(); closeModal(); const p = ui.pendingConsent; ui.pendingConsent = null; p?.onOk(); },
+  'consent-no': () => { closeModal(); const p = ui.pendingConsent; ui.pendingConsent = null; p?.onCancel(); },
+
+  'skin-ai': () => {
+    const last = S.skin.photos[S.skin.photos.length - 1];
+    if (!last) return toast('Prends d\'abord une photo');
+    withConsent(() => runSkinAi(last.data));
+  },
+
+  'meal-toggle': (el) => { const x = ui.mealAi.items[+el.dataset.i]; x.sel = !x.sel; mealModal(); },
+  'meal-mult': (el) => { const x = ui.mealAi.items[+el.dataset.i]; x.mult = Math.max(0.5, Math.min(4, x.mult + Number(el.dataset.d))); mealModal(); },
+  'meal-add': () => {
+    const items = ui.mealAi.items.filter((x) => x.sel);
+    items.forEach((x) => addFood({ n: x.name, u: `${x.mult !== 1 ? x.mult + ' × ' : ''}${x.portion} (IA)`, k: x.kcal * x.mult, p: x.p * x.mult, g: x.g * x.mult, l: x.l * x.mult }));
+    ui.mealAi = null; closeModal(); toast(`${items.length} aliment${items.length > 1 ? 's' : ''} ajouté${items.length > 1 ? 's' : ''} ✓`); rerender();
+  },
+  'food-back': () => { ui.mealAi = null; foodModal(); },
+});
+
+Object.assign(INPUTS, {
+  'coach-grow': (el) => { el.style.height = 'auto'; el.style.height = Math.min(140, el.scrollHeight) + 'px'; },
+  'meal-photo': async (el) => {
+    const f = el.files?.[0]; if (!f) return;
+    try {
+      const img = await compressImage(f);
+      withConsent(() => analyseMeal(img), () => foodModal());
+    } catch { toast('Impossible de lire cette photo'); }
+  },
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'coach-in') { e.preventDefault(); sendCoach(e.target.value); }
+  if (e.key === 'Enter' && e.target.closest?.('.modal') && (e.target.id === 'au-pass' || e.target.id === 'au-email')) A['auth-submit']();
+});
+
+onSave(() => schedulePush());
 render();
+initCloud(() => rerender());

@@ -12,6 +12,8 @@ const blank = () => ({
   weights: [],
   skin: { answers: {}, zones: {}, feel: null, result: null, photos: [] },
   settings: {},
+  coach: [],
+  brief: null,
 });
 
 function load() {
@@ -24,8 +26,16 @@ function load() {
 
 export let S = load();
 
+let afterSave = () => {};
+export const onSave = (fn) => { afterSave = fn; };
+
+// Sauvegarde sans déclencher la synchro (utilisée par la synchro elle-même)
+export function saveQuiet() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* plein */ }
+}
+
 export function save() {
-  try { localStorage.setItem(KEY, JSON.stringify(S)); return true; }
+  try { localStorage.setItem(KEY, JSON.stringify(S)); afterSave(); return true; }
   catch (e) {
     // Quota dépassé : on retire les plus vieilles photos de peau
     if (S.skin.photos.length > 1) { S.skin.photos.shift(); return save(); }

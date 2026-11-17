@@ -21,5 +21,16 @@ Fonctionne hors ligne grâce au service worker (`sw.js`). Installable sur l'écr
 ## Mise à jour
 Après chaque modification, incrémenter `CACHE` dans `sw.js` pour que les téléphones récupèrent la nouvelle version.
 
-## Feuille de route V2
-Coach IA, scan IA du visage, photo de repas, synchro Apple Santé / Google Fit, comptes utilisateurs, rappels, défis entre amis.
+## V2 : comptes et IA
+- **Comptes** (Firebase Auth : e-mail ou Google) et **synchronisation** Firestore, local d'abord. Les photos de peau restent sur l'appareil.
+- **Coach IA** (Gemini) : brief du jour et discussion, avec les données de l'utilisateur en contexte.
+- **Scan IA du visage** et **photo de repas** (Gemini, avec consentement avant envoi).
+- Serveur IA : `api/ai.js` (fonction Vercel). Vérifie le jeton Firebase, garde la clé Gemini secrète.
+
+### Configuration
+- `js/config.js` : bloc `firebaseConfig` (public) et adresse du serveur IA.
+- Vercel, variables : `GEMINI_API_KEY` (secret), `FIREBASE_PROJECT_ID`, facultatif `GEMINI_MODEL`, `DAILY_LIMIT`.
+- Firebase : coller `firestore.rules` dans Firestore > Règles. Ajouter le domaine GitHub Pages dans Authentication > Domaines autorisés.
+
+## À venir
+Synchro Apple Santé / Google Fit, rappels, défis entre amis, bilans mensuels.
