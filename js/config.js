@@ -7,7 +7,7 @@
 export const FIREBASE_CONFIG = null;
 
 // Adresse du serveur IA (fonction Vercel). Sur le domaine Vercel lui-même, on utilise un chemin relatif.
-const VERCEL_API = 'https://all-in-ai.vercel.app/api/ai';
+const VERCEL_API = 'https://all-in-ai-six.vercel.app/api/ai';
 export const API_URL = location.hostname.endsWith('.vercel.app') ? '/api/ai' : VERCEL_API;
 
 export const FIREBASE_SDK = '13.2.0';
