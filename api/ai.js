@@ -211,6 +211,18 @@ async function diag(res, req) {
     out.listStatus = r.status;
     out.models = (j.models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent')).map((m) => m.name.replace('models/', ''));
   } catch (e) { out.listError = String(e); }
+  if (req.query?.selftest) {
+    // Test réel : petite image grise + format de réponse de l'appli
+    const tiny = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+    const t0 = Date.now();
+    try {
+      const kind = req.query.selftest;
+      const r = kind === 'products'
+        ? await gemini({ system: `${PRODUCTS_SYSTEM}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.products, contents: [{ role: 'user', parts: [{ text: 'Profil de peau : {"type":"Peau mixte","preoccupations":["Points noirs / pores","Brillance"],"sexe":"homme","age":30}' }] }] })
+        : await gemini({ system: `${SKIN_SYSTEM}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.skin, contents: [{ role: 'user', parts: [{ text: 'Analyse cette photo.' }, img(tiny)] }] });
+      return res.status(200).json({ ok: true, ms: Date.now() - t0, keys: Object.keys(r), sample: JSON.stringify(r).slice(0, 900) });
+    } catch (e) { return res.status(200).json({ ok: false, ms: Date.now() - t0, err: e?.msg || String(e) }); }
+  }
   const cands = req.query?.models ? String(req.query.models).split(',').slice(0, 8) : out.models.filter((m) => /flash/.test(m) && !/image|tts|audio|live|preview-0|exp/.test(m)).slice(0, 8);
   const lvl = req.query?.level;
   await Promise.all(cands.map(async (m) => {
