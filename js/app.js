@@ -962,7 +962,7 @@ function viewProfil() {
     <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">${cloud.user ? 'Tes données sont sur ce téléphone et sauvegardées dans ton compte. Les photos de peau restent uniquement sur ce téléphone.' : 'Tout est enregistré sur ce téléphone. Crée un compte pour les sauvegarder, ou exporte une copie avant de changer d\'appareil.'}</p>
       <div class="row" style="margin-top:12px"><button class="btn grow sm" data-act="export">⬇ Exporter</button><label class="btn grow sm" style="cursor:pointer">⬆ Importer<input type="file" accept="application/json,.json" data-on="import" hidden></label></div>
       <button class="btn danger block sm" style="margin-top:8px" data-act="reset">Effacer toutes mes données</button></div>
-    <p class="note center section">All In · V2</p></div>`;
+    <p class="note center section">All In · version 2.5</p></div>`;
 }
 
 /* ============================================================
@@ -1158,7 +1158,10 @@ window.addEventListener('hashchange', render);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && route().page !== 'wk') rerender(); });
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => reg.update()).catch(() => {});
+  // Quand une nouvelle version prend le relais, on recharge une fois pour l'afficher
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded && route().page !== 'wk') { reloaded = true; location.reload(); } });
 }
 
 /* ============================================================

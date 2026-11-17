@@ -1,5 +1,5 @@
 /* All In — service worker : l'appli fonctionne même sans connexion */
-const CACHE = 'allin-v2.4.1';
+const CACHE = 'allin-v2.5.0';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/style.css',
   './js/app.js', './js/core.js', './js/data.js', './js/cloud.js', './js/config.js', './js/anim.js',
@@ -17,8 +17,11 @@ self.addEventListener('activate', (e) => {
 // Réseau d'abord (pour recevoir les mises à jour), cache en secours hors ligne
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+  // Fichiers de l'appli : toujours vérifier la dernière version sur le serveur (pas de cache navigateur)
+  const req = url.origin === self.location.origin ? fetch(url.href, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(e.request);
   e.respondWith(
-    fetch(e.request)
+    req
       .then((res) => {
         if (res.ok && (e.request.url.startsWith(self.location.origin) || e.request.url.includes('fonts.g'))) {
           const copy = res.clone();
