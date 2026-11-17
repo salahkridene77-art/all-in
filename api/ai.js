@@ -204,7 +204,7 @@ async function diag(res) {
   const key = process.env.GEMINI_API_KEY;
   const out = { models: [], tests: {} };
   try {
-    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key } });
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key }, signal: AbortSignal.timeout(10000) });
     const j = await r.json();
     out.listStatus = r.status;
     out.models = (j.models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent')).map((m) => m.name.replace('models/', ''));
@@ -213,9 +213,9 @@ async function diag(res) {
   await Promise.all(cands.map(async (m) => {
     const t0 = Date.now();
     try {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Réponds juste OK' }] }], generationConfig: { maxOutputTokens: 20 } }) });
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Réponds juste OK' }] }], generationConfig: { maxOutputTokens: 20 } }), signal: AbortSignal.timeout(12000) });
       out.tests[m] = { status: r.status, ms: Date.now() - t0, body: r.ok ? '' : (await r.text()).slice(0, 220) };
-    } catch (e) { out.tests[m] = { error: String(e) }; }
+    } catch (e) { out.tests[m] = { error: String(e).slice(0, 80), ms: Date.now() - t0 }; }
   }));
   return res.status(200).json(out);
 }
