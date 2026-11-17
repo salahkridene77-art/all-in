@@ -144,31 +144,56 @@ function underLimit(uid) {
 
 async function gemini({ system, contents, schema, temperature = 0.6 }) {
   const key = process.env.GEMINI_API_KEY;
-  const models = [process.env.GEMINI_MODEL || 'gemini-2.5-flash', 'gemini-flash-latest'];
-  let lastErr;
-  for (const model of [...new Set(models)]) {
-    const generationConfig = { temperature, maxOutputTokens: 2048 };
-    if (schema) { generationConfig.responseMimeType = 'application/json'; generationConfig.responseSchema = schema; }
-    if (model.startsWith('gemini-2.5-flash')) generationConfig.thinkingConfig = { thinkingBudget: 0 };
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents,
-        generationConfig,
-        safetySettings: ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT'].map((category) => ({ category, threshold: 'BLOCK_MEDIUM_AND_ABOVE' })),
-      }),
-    });
-    if (r.status === 404) { lastErr = { status: 404, msg: `Modèle ${model} introuvable` }; continue; }
-    if (r.status === 429) throw { status: 429, msg: 'Quota Gemini atteint. Réessaie dans un moment.' };
-    if (!r.ok) throw { status: 502, msg: `Erreur Gemini (${r.status})`, detail: (await r.text()).slice(0, 300) };
-    const data = await r.json();
-    const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
-    if (!text) throw { status: 502, msg: 'Réponse vide de l\'IA', detail: data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason };
-    return schema ? JSON.parse(text) : text.trim();
+  // Modèle principal puis modèles de secours (quotas et charge séparés)
+  const models = [...new Set([process.env.GEMINI_MODEL || 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'])];
+  const deadline = Date.now() + 100000;
+  let lastErr = { status: 502, msg: 'Aucun modèle disponible' };
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (Date.now() > deadline - 8000) throw { status: 504, msg: 'L\'IA met trop de temps à répondre. Réessaie dans un instant.' };
+      const generationConfig = { temperature, maxOutputTokens: 4096 };
+      if (schema) { generationConfig.responseMimeType = 'application/json'; generationConfig.responseSchema = schema; }
+      if (model.startsWith('gemini-2.5-flash')) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), Math.min(40000, deadline - Date.now()));
+      let r;
+      try {
+        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents,
+            generationConfig,
+            safetySettings: ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT'].map((category) => ({ category, threshold: 'BLOCK_MEDIUM_AND_ABOVE' })),
+          }),
+        });
+      } catch (e) {
+        clearTimeout(timer);
+        console.error('Gemini timeout/réseau', model, e?.name);
+        lastErr = { status: 504, msg: 'L\'IA met trop de temps à répondre. Réessaie dans un instant.' };
+        break; // modèle suivant
+      }
+      clearTimeout(timer);
+      if (r.status === 404) { lastErr = { status: 502, msg: `Modèle ${model} introuvable` }; break; }
+      if (r.status === 429) { lastErr = { status: 429, msg: 'Quota Gemini atteint. Réessaie dans un moment.' }; break; }
+      if (r.status === 503 || r.status === 500) {
+        console.error('Gemini surchargé', model, r.status);
+        lastErr = { status: 503, msg: 'L\'IA est très demandée en ce moment. Réessaie dans quelques secondes.' };
+        await new Promise((ok) => setTimeout(ok, 1200 * (attempt + 1)));
+        continue; // on réessaie, puis modèle suivant
+      }
+      if (!r.ok) throw { status: 502, msg: `Erreur Gemini (${r.status})`, detail: (await r.text()).slice(0, 300) };
+      const data = await r.json();
+      const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
+      if (!text) throw { status: 502, msg: 'Réponse vide de l\'IA', detail: data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason };
+      if (!schema) return text.trim();
+      try { return JSON.parse(text); }
+      catch { lastErr = { status: 502, msg: 'Réponse de l\'IA incomplète, réessaie.' }; continue; }
+    }
   }
-  throw lastErr || { status: 502, msg: 'Aucun modèle disponible' };
+  throw lastErr;
 }
 
 const img = (b64) => ({ inline_data: { mime_type: 'image/jpeg', data: String(b64).replace(/^data:image\/\w+;base64,/, '') } });

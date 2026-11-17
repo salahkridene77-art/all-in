@@ -207,7 +207,7 @@ export async function ai(task, payload = {}) {
   if (MOCK) return mockAi(task, payload);
   const token = await fb.auth.currentUser.getIdToken();
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 60000);
+  const t = setTimeout(() => ctrl.abort(), 110000);
   try {
     const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ task, ...payload }), signal: ctrl.signal });
     const data = await r.json().catch(() => ({}));
