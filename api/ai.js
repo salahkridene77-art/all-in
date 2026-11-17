@@ -200,7 +200,7 @@ const img = (b64) => ({ inline_data: { mime_type: 'image/jpeg', data: String(b64
 const ctxText = (c) => `Contexte utilisateur (données de l'appli, JSON) :\n${JSON.stringify(c || {}).slice(0, 6000)}`;
 
 /* Diagnostic (protégé par DIAG_TOKEN) : modèles accessibles avec la clé et test rapide de chacun */
-async function diag(res) {
+async function diag(res, req) {
   const key = process.env.GEMINI_API_KEY;
   const out = { models: [], tests: {} };
   try {
@@ -209,12 +209,14 @@ async function diag(res) {
     out.listStatus = r.status;
     out.models = (j.models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent')).map((m) => m.name.replace('models/', ''));
   } catch (e) { out.listError = String(e); }
-  const cands = out.models.filter((m) => /flash/.test(m) && !/image|tts|audio|live|preview-0|exp/.test(m)).slice(0, 8);
+  const cands = req.query?.models ? String(req.query.models).split(',').slice(0, 8) : out.models.filter((m) => /flash/.test(m) && !/image|tts|audio|live|preview-0|exp/.test(m)).slice(0, 8);
+  const lvl = req.query?.level;
   await Promise.all(cands.map(async (m) => {
     const t0 = Date.now();
     try {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Réponds juste OK' }] }], generationConfig: { maxOutputTokens: 20 } }), signal: AbortSignal.timeout(12000) });
-      out.tests[m] = { status: r.status, ms: Date.now() - t0, body: r.ok ? '' : (await r.text()).slice(0, 220) };
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Donne 5 conseils skincare courts en JSON.' }] }], generationConfig: { maxOutputTokens: 600, responseMimeType: 'application/json', ...(lvl ? { thinkingConfig: { thinkingLevel: lvl } } : {}) } }), signal: AbortSignal.timeout(20000) });
+      const txt = await r.text();
+      out.tests[m] = { status: r.status, ms: Date.now() - t0, body: r.ok ? '' : txt.slice(0, 220), usage: r.ok ? JSON.parse(txt).usageMetadata : undefined };
     } catch (e) { out.tests[m] = { error: String(e).slice(0, 80), ms: Date.now() - t0 }; }
   }));
   return res.status(200).json(out);
@@ -223,7 +225,7 @@ async function diag(res) {
 export default async function handler(req, res) {
   cors(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method === 'GET' && process.env.DIAG_TOKEN && req.query?.diag === process.env.DIAG_TOKEN) return diag(res);
+  if (req.method === 'GET' && process.env.DIAG_TOKEN && req.query?.diag === process.env.DIAG_TOKEN) return diag(res, req);
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' });
   if (!process.env.GEMINI_API_KEY || !process.env.FIREBASE_PROJECT_ID) return res.status(503).json({ error: 'Serveur IA pas encore configuré (clé Gemini ou projet Firebase manquant).' });
 
