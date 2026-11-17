@@ -38,9 +38,10 @@ const BRIEF_SYSTEM = `Tu es le coach d'All In. Rédige le brief du jour de l'uti
 ${SAFETY}`;
 
 const SKIN_SYSTEM = `Tu es l'assistant skincare d'All In. Tu donnes des conseils COSMÉTIQUES, tu n'es pas dermatologue et tu ne poses aucun diagnostic médical.
-On t'envoie une photo de visage (selfie) et les réponses de la personne à un questionnaire.
+On t'envoie une photo de visage (selfie), le sexe et l'âge de la personne, et son pays.
 - Décris uniquement l'état visible de la peau : brillance, boutons, points noirs/pores, rougeurs, sécheresse, taches, ridules, cernes, teint terne.
 - Ne commente jamais la beauté, les traits, l'âge, le poids, l'origine ou la couleur de peau.
+- C'est TOI qui repères les problèmes : observe attentivement chaque zone (front, nez, joues, menton, contour des yeux) et liste ce que tu vois réellement, avec son intensité.
 - Zones possibles : front, nez, joue_g (joue gauche sur la photo), joue_d, menton, yeux.
 - Si la photo est floue, trop sombre, sans visage ou maquillée au point d'empêcher l'analyse, mets quality à "bad" et explique pourquoi dans qualityNote.
 - Sois prudent : n'indique un problème que s'il est réellement visible. En cas de doute, ne le signale pas.
@@ -54,7 +55,12 @@ const PRODUCT_RULES = (country) => `Produits à recommander (champ products) :
 - Champ prix : un prix approximatif en ${country?.currency || 'monnaie locale'} (ex. « env. 1 800 DA », « env. 15 € »). Champ ou : où l'acheter dans ce pays (ex. « pharmacie », « parapharmacie », « grande surface »).
 - N'invente jamais un produit : ne cite que des produits dont tu es certain qu'ils existent. Si tu doutes du nom exact, cite la gamme de la marque (ex. « gamme Effaclar »). Privilégie les marques réellement distribuées dans ce pays.
 - Jamais de médicament ni de produit sur ordonnance (trétinoïne, isotrétinoïne, antibiotiques, hydroquinone, corticoïdes).
-- Champ pourquoi : une phrase simple, en français, avec tutoiement, qui relie le produit à la peau de la personne.`;
+- Champ pourquoi : une phrase simple, en français, avec tutoiement, qui relie le produit à la peau de la personne.
+
+Ingrédients (champs privilegier et eviter) :
+- privilegier : 3 à 5 ingrédients actifs vraiment utiles pour CETTE peau (ingredient : nom court comme « Niacinamide » ou « Acide salicylique » ; pourquoi : une phrase simple). Pas d'ingrédients contradictoires entre eux.
+- eviter : 3 à 5 ingrédients ou types de produits à éviter pour cette peau (quoi, pourquoi, exemples : les types de produits courants dans ce pays qui en contiennent souvent, par exemple « savons solides classiques, gommages aux grains » — SANS citer de marque).
+- Chaque produit recommandé doit contenir au moins un ingrédient de privilegier : liste-les dans contient en reprenant EXACTEMENT les mêmes noms. Aucun produit ne doit contenir un élément de eviter.`;
 
 const PRODUCTS_SYSTEM = `Tu es l'assistant skincare d'All In (conseils COSMÉTIQUES, pas médicaux). On te donne le profil de peau d'une personne et son pays : recommande-lui des produits adaptés et disponibles chez elle.`;
 
@@ -67,11 +73,15 @@ const S = (type, extra = {}) => ({ type, ...extra });
 const PRODUCT_LIST = S('ARRAY', { items: S('OBJECT', {
   properties: {
     etape: S('STRING', { enum: ['Nettoyant', 'Sérum', 'Traitement', 'Contour des yeux', 'Hydratant', 'Protection solaire', 'Masque'] }),
-    marque: S('STRING'), produit: S('STRING'), pourquoi: S('STRING'), prix: S('STRING'), ou: S('STRING'),
+    marque: S('STRING'), produit: S('STRING'), contient: S('ARRAY', { items: S('STRING') }), pourquoi: S('STRING'), prix: S('STRING'), ou: S('STRING'),
     budget: S('STRING', { enum: ['petit prix', 'moyen', 'premium'] }),
   },
-  required: ['etape', 'marque', 'produit', 'pourquoi', 'prix', 'ou', 'budget'],
+  required: ['etape', 'marque', 'produit', 'contient', 'pourquoi', 'prix', 'ou', 'budget'],
 }) });
+const INGR = {
+  privilegier: S('ARRAY', { items: S('OBJECT', { properties: { ingredient: S('STRING'), pourquoi: S('STRING') }, required: ['ingredient', 'pourquoi'] }) }),
+  eviter: S('ARRAY', { items: S('OBJECT', { properties: { quoi: S('STRING'), pourquoi: S('STRING'), exemples: S('STRING') }, required: ['quoi', 'pourquoi', 'exemples'] }) }),
+};
 const SCHEMAS = {
   brief: S('OBJECT', { properties: { title: S('STRING'), message: S('STRING'), action: S('STRING') }, required: ['title', 'message', 'action'] }),
   skin: S('OBJECT', {
@@ -84,11 +94,12 @@ const SCHEMAS = {
       tips: S('ARRAY', { items: S('STRING') }),
       seeDoctor: S('BOOLEAN'),
       seeDoctorReason: S('STRING'),
+      ...INGR,
       products: PRODUCT_LIST,
     },
-    required: ['quality', 'skinType', 'observations', 'summary', 'tips', 'seeDoctor', 'products'],
+    required: ['quality', 'skinType', 'observations', 'summary', 'tips', 'seeDoctor', 'privilegier', 'eviter', 'products'],
   }),
-  products: S('OBJECT', { properties: { products: PRODUCT_LIST }, required: ['products'] }),
+  products: S('OBJECT', { properties: { ...INGR, products: PRODUCT_LIST }, required: ['privilegier', 'eviter', 'products'] }),
   meal: S('OBJECT', {
     properties: {
       isFood: S('BOOLEAN'),

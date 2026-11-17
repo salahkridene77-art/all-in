@@ -222,14 +222,15 @@ export async function ai(task, payload = {}) {
 
 async function mockAi(task, p) {
   await new Promise((r) => setTimeout(r, 400));
+  const prods = [
+    { etape: 'Nettoyant', marque: 'La Roche-Posay', produit: 'Effaclar Gel moussant purifiant', contient: ['Zinc', 'Niacinamide'], pourquoi: 'Nettoie sans dessécher ta peau mixte.', prix: 'env. 15 €', ou: 'pharmacie', budget: 'moyen' },
+    { etape: 'Protection solaire', marque: 'Garnier', produit: 'Ambre Solaire Super UV fluide SPF 50+', contient: ['Filtres UV'], pourquoi: 'Texture légère qui ne brille pas.', prix: 'env. 12 €', ou: 'grande surface', budget: 'petit prix' },
+  ];
+  const ingr = { privilegier: [{ ingredient: 'Niacinamide', pourquoi: 'Régule le sébum et resserre les pores.' }, { ingredient: 'Zinc', pourquoi: 'Calme les petits boutons.' }], eviter: [{ quoi: 'Savons décapants', pourquoi: 'Ils relancent la production de sébum.', exemples: 'savons solides classiques, gels très moussants' }] };
   if (task === 'brief') return { title: 'Garde le rythme', message: `Tu as bu ${p.context?.aujourdhui?.eau_ml ?? 0} ml d'eau. Ta séance du jour t'attend.`, action: 'Bois 2 verres d\'eau avant midi' };
   if (task === 'coach') return { text: 'Bonne question ! Voici ce que je te propose :\n- **Échauffe-toi** 5 min\n- Fais 3 séries de squats\n- Bois un grand verre d\'eau' };
-  if (task === 'skin') return { quality: 'good', qualityNote: '', skinType: 'mixte', observations: [{ zone: 'nez', issue: 'points', level: 'modéré', note: 'Pores dilatés sur le nez' }, { zone: 'front', issue: 'brillance', level: 'léger', note: '' }], summary: 'Peau plutôt mixte avec quelques points noirs sur le nez.', tips: ['Utilise un BHA 2 à 3 soirs par semaine', 'Garde un hydratant léger'], seeDoctor: false, seeDoctorReason: '', products: [] };
-  const prods = [
-    { etape: 'Nettoyant', marque: 'La Roche-Posay', produit: 'Effaclar Gel moussant purifiant', pourquoi: 'Nettoie sans dessécher ta peau mixte.', prix: 'env. 15 €', ou: 'pharmacie', budget: 'moyen' },
-    { etape: 'Protection solaire', marque: 'Garnier', produit: 'Ambre Solaire Super UV fluide SPF 50+', pourquoi: 'Texture légère qui ne brille pas.', prix: 'env. 12 €', ou: 'grande surface', budget: 'petit prix' },
-  ];
-  if (task === 'products') return { products: prods };
+  if (task === 'skin') return { quality: 'good', qualityNote: '', skinType: 'mixte', observations: [{ zone: 'nez', issue: 'points', level: 'modéré', note: 'Pores dilatés sur le nez' }, { zone: 'front', issue: 'brillance', level: 'léger', note: '' }], summary: 'Peau plutôt mixte avec quelques points noirs sur le nez.', tips: ['Utilise un BHA 2 à 3 soirs par semaine', 'Garde un hydratant léger'], seeDoctor: false, seeDoctorReason: '', ...ingr, products: prods };
+  if (task === 'products') return { ...ingr, products: prods };
   if (task === 'meal') return { isFood: true, items: [{ name: 'Couscous au poulet', portion: '1 assiette', grams: 350, kcal: 560, p: 32, g: 70, l: 15 }, { name: 'Salade verte', portion: '1 bol', grams: 80, kcal: 25, p: 1, g: 4, l: 0 }], comment: 'Bon équilibre, ajoute un fruit en dessert.' };
   return {};
 }
