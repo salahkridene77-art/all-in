@@ -172,25 +172,25 @@ async function gemini({ system, contents, schema, temperature = 0.6 }) {
       } catch (e) {
         clearTimeout(timer);
         console.error('Gemini timeout/réseau', model, e?.name);
-        lastErr = { status: 504, msg: 'L\'IA met trop de temps à répondre. Réessaie dans un instant.' };
+        lastErr = { status: 504, msg: 'L\'IA met trop de temps à répondre. Réessaie dans un instant.', keep: true };
         break; // modèle suivant
       }
       clearTimeout(timer);
-      if (r.status === 404) { lastErr = { status: 502, msg: `Modèle ${model} introuvable` }; break; }
-      if (r.status === 429) { lastErr = { status: 429, msg: 'Quota Gemini atteint. Réessaie dans un moment.' }; break; }
+      if (r.status === 404) { console.error('Gemini modèle absent', model); if (lastErr.status === 502 && !lastErr.keep) lastErr = { status: 502, msg: `Modèle ${model} introuvable` }; break; }
+      if (r.status === 429) { console.error('Gemini quota', model, (await r.text()).slice(0, 400)); lastErr = { status: 429, msg: 'Quota Gemini atteint. Réessaie dans un moment.', keep: true }; break; }
       if (r.status === 503 || r.status === 500) {
         console.error('Gemini surchargé', model, r.status);
-        lastErr = { status: 503, msg: 'L\'IA est très demandée en ce moment. Réessaie dans quelques secondes.' };
+        lastErr = { status: 503, msg: 'L\'IA est très demandée en ce moment. Réessaie dans quelques secondes.', keep: true };
         await new Promise((ok) => setTimeout(ok, 1200 * (attempt + 1)));
         continue; // on réessaie, puis modèle suivant
       }
-      if (!r.ok) throw { status: 502, msg: `Erreur Gemini (${r.status})`, detail: (await r.text()).slice(0, 300) };
+      if (!r.ok) { const t = (await r.text()).slice(0, 400); console.error('Gemini erreur', model, r.status, t); lastErr = { status: 502, msg: `Erreur Gemini (${r.status})`, keep: true }; break; }
       const data = await r.json();
       const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
       if (!text) throw { status: 502, msg: 'Réponse vide de l\'IA', detail: data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason };
       if (!schema) return text.trim();
       try { return JSON.parse(text); }
-      catch { lastErr = { status: 502, msg: 'Réponse de l\'IA incomplète, réessaie.' }; continue; }
+      catch { console.error('Gemini JSON invalide', model, text.slice(0, 200)); lastErr = { status: 502, msg: 'Réponse de l\'IA incomplète, réessaie.', keep: true }; continue; }
     }
   }
   throw lastErr;
@@ -199,9 +199,31 @@ async function gemini({ system, contents, schema, temperature = 0.6 }) {
 const img = (b64) => ({ inline_data: { mime_type: 'image/jpeg', data: String(b64).replace(/^data:image\/\w+;base64,/, '') } });
 const ctxText = (c) => `Contexte utilisateur (données de l'appli, JSON) :\n${JSON.stringify(c || {}).slice(0, 6000)}`;
 
+/* Diagnostic (protégé par DIAG_TOKEN) : modèles accessibles avec la clé et test rapide de chacun */
+async function diag(res) {
+  const key = process.env.GEMINI_API_KEY;
+  const out = { models: [], tests: {} };
+  try {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key } });
+    const j = await r.json();
+    out.listStatus = r.status;
+    out.models = (j.models || []).filter((m) => (m.supportedGenerationMethods || []).includes('generateContent')).map((m) => m.name.replace('models/', ''));
+  } catch (e) { out.listError = String(e); }
+  const cands = out.models.filter((m) => /flash/.test(m) && !/image|tts|audio|live|preview-0|exp/.test(m)).slice(0, 8);
+  await Promise.all(cands.map(async (m) => {
+    const t0 = Date.now();
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Réponds juste OK' }] }], generationConfig: { maxOutputTokens: 20 } }) });
+      out.tests[m] = { status: r.status, ms: Date.now() - t0, body: r.ok ? '' : (await r.text()).slice(0, 220) };
+    } catch (e) { out.tests[m] = { error: String(e) }; }
+  }));
+  return res.status(200).json(out);
+}
+
 export default async function handler(req, res) {
   cors(req, res);
   if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method === 'GET' && process.env.DIAG_TOKEN && req.query?.diag === process.env.DIAG_TOKEN) return diag(res);
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' });
   if (!process.env.GEMINI_API_KEY || !process.env.FIREBASE_PROJECT_ID) return res.status(503).json({ error: 'Serveur IA pas encore configuré (clé Gemini ou projet Firebase manquant).' });
 
