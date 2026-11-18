@@ -4,11 +4,11 @@
    ============================================================ */
 
 export const GOALS = {
-  perte_poids: { label: 'Perte de poids', icon: '🔥', desc: 'Brûler du gras tout en gardant le muscle', kcal: -0.20, prot: 1.8, steps: 10000 },
-  muscle:      { label: 'Masse musculaire', icon: '💪', desc: 'Se muscler et se dessiner, sans prendre de gras', kcal: 0.0, prot: 2.0, steps: 8000 },
-  prise_masse: { label: 'Prise de masse', icon: '🏋️', desc: 'Prendre du poids et du volume', kcal: 0.12, prot: 1.8, steps: 7000 },
-  forme:       { label: 'Remise en forme', icon: '⚡', desc: "Retrouver de l'énergie et bouger plus", kcal: 0.0, prot: 1.4, steps: 8000 },
-  endurance:   { label: 'Endurance', icon: '🏃', desc: 'Améliorer le cardio et le souffle', kcal: 0.05, prot: 1.5, steps: 10000 },
+  perte_poids: { label: 'Perte de poids', icon: '🔥', desc: 'Brûler du gras tout en gardant le muscle', kcal: -0.20, prot: 1.6, steps: 10000 },
+  muscle:      { label: 'Masse musculaire', icon: '💪', desc: 'Se muscler et se dessiner, sans prendre de gras', kcal: 0.0, prot: 1.8, steps: 8000 },
+  prise_masse: { label: 'Prise de masse', icon: '🏋️', desc: 'Prendre du poids et du volume', kcal: 0.12, prot: 1.7, steps: 7000 },
+  forme:       { label: 'Remise en forme', icon: '⚡', desc: "Retrouver de l'énergie et bouger plus", kcal: 0.0, prot: 1.2, steps: 8000 },
+  endurance:   { label: 'Endurance', icon: '🏃', desc: 'Améliorer le cardio et le souffle', kcal: 0.05, prot: 1.4, steps: 10000 },
 };
 
 export const LEVELS = {

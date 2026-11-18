@@ -61,6 +61,9 @@ const ERRORS = {
   'auth/popup-closed-by-user': 'Connexion Google annulée.',
   'auth/unauthorized-domain': 'Ce site n\'est pas encore autorisé dans Firebase (domaines autorisés).',
   'auth/operation-not-allowed': 'Ce mode de connexion n\'est pas activé dans Firebase.',
+  'auth/popup-blocked': 'Fenêtre bloquée : autorise les pop-ups ou ouvre l\'appli dans Safari / Chrome.',
+  'auth/web-storage-unsupported': 'Ce navigateur bloque la connexion : ouvre l\'appli dans Safari ou Chrome.',
+  'auth/internal-error': 'Connexion impossible dans ce navigateur : ouvre l\'appli dans Safari ou Chrome.',
 };
 export const authError = (e) => ERRORS[e?.code] || e?.message || 'Erreur inconnue.';
 

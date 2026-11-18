@@ -84,7 +84,8 @@ export function currentWeight() {
 
 /* Activité au quotidien HORS sport (le sport est ajouté à part, selon le nombre de séances) */
 const NEAT = { '1.2': 1.2, '1.375': 1.3, '1.55': 1.4, '1.725': 1.5 };
-const WATER_PER_KG = { '1.2': 30, '1.375': 32, '1.55': 35, '1.725': 38 };
+// Eau à BOIRE (hors eau des aliments). Repères EFSA : environ 2 L/jour pour un homme, 1,6 L pour une femme
+const WATER_PER_KG = { '1.2': 25, '1.375': 27, '1.55': 30, '1.725': 33 };
 const HOT_COUNTRIES = ['DZ', 'MA', 'TN', 'SN', 'CI'];
 const round = (v, step) => Math.round(v / step) * step;
 
@@ -121,13 +122,13 @@ export function targets(p = S.profile, k = today()) {
   const carbs = Math.max(50, Math.round((kcal - prot * 4 - fat * 9) / 4));
 
   // Eau à boire : ml/kg selon l'activité, bornée, + séance du jour, + chaleur (pays chauds, mai à septembre)
-  const perKg = WATER_PER_KG[String(p.activity)] ?? 32;
+  const perKg = WATER_PER_KG[String(p.activity)] ?? 27;
   const waterW = bmiV > 27 ? refW + (weight - refW) * 0.4 : weight; // poids corrigé si surpoids
-  const waterBase = round(Math.min(female ? 3000 : 3500, Math.max(female ? 1500 : 1800, waterW * perKg)), 50);
+  const waterBase = round(Math.min(female ? 2500 : 3000, Math.max(female ? 1500 : 1800, waterW * perKg)), 50);
   const d = S.days?.[k];
   const waterTrain = (S.profile === p && (isTrainingDay(k, p) || d?.workout)) ? 500 : 0;
   const month = parseKey(k).getMonth() + 1;
-  const waterHeat = HOT_COUNTRIES.includes(p.country) && month >= 5 && month <= 9 ? 500 : 0;
+  const waterHeat = HOT_COUNTRIES.includes(p.country) && month >= 6 && month <= 9 ? 300 : 0;
   const water = waterBase + waterTrain + waterHeat;
 
   // Sommeil recommandé selon l'âge

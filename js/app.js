@@ -11,6 +11,9 @@ import { exerciseAnim, hasAnim } from './anim.js';
 import { cloud, initCloud, schedulePush, signUp, signIn, signInGoogle, resetPassword, signOutUser, authError, ai, pullAndMerge } from './cloud.js';
 
 const app = document.getElementById('app');
+// Navigateur intégré à une appli (Instagram, Facebook, TikTok, Snapchat…) : caméra et connexion Google souvent bloquées
+const IN_APP = /FBAN|FBAV|FB_IAB|Instagram|TikTok|musical_ly|Bytedance|Snapchat|Line\/|MicroMessenger|Twitter/i.test(navigator.userAgent);
+const inAppNote = () => IN_APP ? `<div class="card flat" style="background:rgba(255,169,77,.12);border:1px solid rgba(255,169,77,.35);margin-bottom:12px"><p class="small" style="line-height:1.5">⚠️ Tu as ouvert All In depuis une autre appli (Instagram, TikTok…). La caméra et la connexion Google peuvent y être bloquées. Ouvre plutôt le lien dans <b>Safari</b> ou <b>Chrome</b> : menu ⋯ → « Ouvrir dans le navigateur ».</p></div>` : '';
 const MEALS = ['Petit-déjeuner', 'Déjeuner', 'Dîner', 'Collation'];
 
 const ui = {
@@ -501,7 +504,7 @@ function suiviWater() {
       <path d="M10 6 L140 6 L126 200 Q125 206 119 206 L31 206 Q25 206 24 200 Z" fill="none" stroke="var(--line)" stroke-width="3"/>
       <text x="75" y="105" text-anchor="middle" font-size="30" font-weight="800" fill="var(--text)" font-family="var(--font)">${Math.round(pct * 100)}%</text></svg></div></div>
     <div class="center"><div class="big-num color-water">${(d.water / 1000).toFixed(2).replace('.', ',')} L</div><p class="small muted" style="margin-top:6px">Objectif : ${(t.water / 1000).toFixed(1).replace('.', ',')} L · ${glasses} verre${glasses > 1 ? 's' : ''} bu${glasses > 1 ? 's' : ''}</p>
-      <p class="xs dim" style="margin-top:4px">Base ${(t.waterBase / 1000).toFixed(1).replace('.', ',')} L${t.waterTrain ? ' · +0,5 L jour de sport' : ''}${t.waterHeat ? ' · +0,5 L chaleur' : ''}</p>
+      <p class="xs dim" style="margin-top:4px">Base ${(t.waterBase / 1000).toFixed(1).replace('.', ',')} L${t.waterTrain ? ' · +0,5 L jour de sport' : ''}${t.waterHeat ? ' · +0,3 L chaleur' : ''}</p>
       ${pct >= 1 ? '<p class="small" style="margin-top:8px;color:var(--steps);font-weight:700">🎉 Objectif atteint !</p>' : `<p class="small muted" style="margin-top:4px">Encore ${fmt(t.water - d.water)} ml</p>`}</div>
     <div class="water-btns" style="margin-top:18px">${[['🥃', 150], ['🥛', 250], ['🧃', 330], ['🍶', 500]].map(([i, ml]) => `<button data-act="water-add" data-ml="${ml}"><span>${i}</span>${ml} ml</button>`).join('')}</div>
     ${d.waterLog?.length ? `<button class="btn sm ghost block" style="margin-top:10px" data-act="water-undo">↶ Annuler le dernier ajout (${d.waterLog[d.waterLog.length - 1]} ml)</button>` : ''}</div>
@@ -626,6 +629,7 @@ let camStream = null;
 async function startCamera() {
   const v = document.getElementById('cam');
   if (!v || camStream) return;
+  if (!navigator.mediaDevices?.getUserMedia) { ui.skin.camError = true; rerender(); return; }
   try {
     camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 } }, audio: false });
     const v2 = document.getElementById('cam');
@@ -707,7 +711,7 @@ function proceedWithPhoto() {
   ui.skin.photo = null; // la photo disparaît de l'écran et de la mémoire de l'appli
   const manual = () => { ui.skin.manual = true; ui.skin.step = 'zones'; ui.skin.sel = 'front'; rerender(); };
   if (!data || !cloud.user) return manual();
-  withConsent(() => { startSkinAi(data); ui.skin.manual = false; ui.skin.step = 'questions'; rerender(); }, manual);
+  withConsent(() => { ui.skin.pending = data; startSkinAi(data); ui.skin.manual = false; ui.skin.step = 'questions'; rerender(); }, manual);
 }
 
 /* L'analyse IA démarre tout de suite, pendant que la personne répond aux questions */
@@ -820,13 +824,13 @@ async function finishSkin() {
     try { await ui.skin.aiPromise; } catch { /* géré plus haut */ }
   }
   let aiRes = ui.skin.aiStatus === 'done' ? ui.skin.aiRes : null;
-  if (ui.skin.aiStatus === 'error') toast(ui.skin.aiError || 'Analyse IA indisponible');
+  if (ui.skin.aiStatus === 'error') toast('Résultat basé sur tes réponses (analyse photo indisponible)');
   if (aiRes && aiRes.quality !== 'bad') ui.skin.zones = zonesFromAi(aiRes);
   const res = computeSkin(aiRes);
   if (aiRes) res.reco = { privilegier: aiRes.privilegier || [], eviter: aiRes.eviter || [], products: aiRes.products || [] };
   S.skin.zones = ui.skin.zones; S.skin.feel = ui.skin.feel; S.skin.answers = ui.skin.answers; S.skin.result = res;
   save();
-  ui.skin.aiPromise = null;
+  ui.skin.aiPromise = null; ui.skin.pending = null; // la photo est oubliée
   ui.skin.step = 'result';
   if (aiRes?.quality === 'bad') toast('Photo difficile à analyser : refais-en une face à la lumière');
   if (route().page === 'peau') rerender();
@@ -872,10 +876,10 @@ function skinPhoto() {
       <p class="small muted" style="margin-top:6px;line-height:1.5">Une bonne lumière, face à une fenêtre, permet à l'IA de bien voir ta peau.</p></div>
       <div class="row" style="margin-top:14px"><button class="btn primary grow" style="background:var(--skin);color:#1a0a12" data-act="skin-retake">↺ Reprendre</button><button class="btn grow" data-act="skin-continue">Continuer quand même</button></div>`;
   }
-  return `${sk.camError ? `<div class="card center" style="padding:28px 18px"><div style="font-size:40px">📷</div><h3 style="margin-top:8px">Caméra indisponible</h3><p class="small muted" style="margin-top:6px">Autorise l'accès à la caméra dans ton navigateur, ou importe une photo.</p></div>`
+  return `${inAppNote()}${sk.camError ? `<div class="card center" style="padding:28px 18px"><div style="font-size:40px">📷</div><h3 style="margin-top:8px">Caméra intégrée indisponible</h3><p class="small muted" style="margin-top:6px;line-height:1.5">Pas de souci : touche « Ouvrir l'appareil photo » ci-dessous, ou autorise la caméra dans les réglages de ton navigateur.</p></div>`
     : `<div class="cam-box"><video id="cam" playsinline muted autoplay></video>${oval}<div class="cam-hint"><span>Visage dans l'ovale · face à la lumière · sans maquillage</span></div></div>`}
-    <div class="col" style="margin-top:14px">${sk.camError ? '' : `<button class="btn primary block" style="background:var(--skin);color:#1a0a12" data-act="skin-capture">📸 Prendre la photo</button>`}
-      <label class="btn block" style="cursor:pointer">🖼 Importer une photo<input type="file" accept="image/*" data-on="skin-file" hidden></label>
+    <div class="col" style="margin-top:14px">${sk.camError ? `<label class="btn primary block" style="cursor:pointer;background:var(--skin);color:#1a0a12">📸 Ouvrir l'appareil photo<input type="file" accept="image/*" capture="user" data-on="skin-file" hidden></label>` : `<button class="btn primary block" style="background:var(--skin);color:#1a0a12" data-act="skin-capture">📸 Prendre la photo</button>`}
+      <label class="btn block" style="cursor:pointer">🖼 Choisir une photo existante<input type="file" accept="image/*" data-on="skin-file" hidden></label>
       <button class="btn ghost block sm" data-act="skin-nophoto">Continuer sans photo</button></div>
     <p class="note center" style="margin-top:10px">${S.settings?.keepSkinPhotos ? 'La photo est gardée sur ton téléphone (réglable dans Peau).' : 'La photo n\'est pas conservée : elle est effacée juste après l\'analyse.'}</p>`;
 }
@@ -897,7 +901,7 @@ function skinQuestions() {
   const st = sk.aiStatus;
   const banner = st === 'running' ? `<div class="card flat ai-status"><div class="spin sm"></div><div><b class="small">L'IA analyse ta photo…</b><p class="xs muted" style="margin-top:2px">Réponds aux questions pendant ce temps.</p></div></div>`
     : st === 'done' ? `<div class="card flat ai-status"><span style="font-size:20px">✅</span><div><b class="small">Analyse de ta photo terminée</b><p class="xs muted" style="margin-top:2px">${(sk.aiRes?.observations || []).length} point${(sk.aiRes?.observations || []).length > 1 ? 's' : ''} repéré${(sk.aiRes?.observations || []).length > 1 ? 's' : ''} sur ta peau. Le détail est dans ton résultat.</p></div></div>`
-    : st === 'error' ? `<div class="card flat ai-status"><span style="font-size:20px">⚠️</span><div><b class="small">Analyse IA indisponible</b><p class="xs muted" style="margin-top:2px">${esc(sk.aiError)} Ton résultat sera basé sur tes réponses.</p></div></div>` : '';
+    : st === 'error' ? `<div class="card flat ai-status" style="flex-wrap:wrap"><span style="font-size:20px">⚠️</span><div class="grow"><b class="small">L'analyse de ta photo n'a pas abouti</b><p class="xs muted" style="margin-top:2px">${esc(sk.aiError)}</p></div>${sk.pending ? `<button class="btn sm" style="width:100%;margin-top:6px;background:var(--skin);color:#1a0a12" data-act="skin-retry">↻ Relancer l'analyse</button>` : ''}</div>` : '';
   return `${banner}<p class="muted small" style="margin-top:${banner ? 14 : 0}px">Réponds honnêtement : c'est ce qui permet de juger ta skincare actuelle.</p>
     <div class="q-block"><div class="q">${D.SKIN_FEEL_Q.q}</div><div class="opt-list">${D.SKIN_FEEL_Q.opts.map(([k, l]) => `<button class="opt ${sk.feel === k ? 'on' : ''}" data-act="skin-feel" data-v="${k}">${l}</button>`).join('')}</div></div>
     ${D.SKIN_ROUTINE_Q.map((q) => `<div class="q-block"><div class="q">${q.q}</div><div class="opt-list">${q.opts.map(([l], i) => `<button class="opt ${sk.answers[q.id] === i ? 'on' : ''}" data-act="skin-ans" data-q="${q.id}" data-v="${i}">${l}</button>`).join('')}</div></div>`).join('')}
@@ -962,7 +966,7 @@ function viewProfil() {
     <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">${cloud.user ? 'Tes données sont sur ce téléphone et sauvegardées dans ton compte. Les photos de peau restent uniquement sur ce téléphone.' : 'Tout est enregistré sur ce téléphone. Crée un compte pour les sauvegarder, ou exporte une copie avant de changer d\'appareil.'}</p>
       <div class="row" style="margin-top:12px"><button class="btn grow sm" data-act="export">⬇ Exporter</button><label class="btn grow sm" style="cursor:pointer">⬆ Importer<input type="file" accept="application/json,.json" data-on="import" hidden></label></div>
       <button class="btn danger block sm" style="margin-top:8px" data-act="reset">Effacer toutes mes données</button></div>
-    <p class="note center section">All In · version 2.5</p></div>`;
+    <p class="note center section">All In · version 2.6</p></div>`;
 }
 
 /* ============================================================
@@ -1074,6 +1078,7 @@ const A = {
     stopCamera(); rerender();
   },
   'skin-continue': () => proceedWithPhoto(),
+  'skin-retry': () => { if (ui.skin.pending) { startSkinAi(ui.skin.pending); rerender(); } },
   'skin-nophoto': () => { stopCamera(); ui.skin.photo = null; ui.skin.manual = true; ui.skin.aiStatus = null; ui.skin.step = 'zones'; ui.skin.sel = 'front'; rerender(); },
   'skin-keep': () => {
     const on = !S.settings?.keepSkinPhotos;
@@ -1376,7 +1381,7 @@ function authModal(mode = 'login', err = '') {
   ui.authMode = mode;
   const signup = mode === 'signup';
   const html = `<div class="modal-head"><h2>${signup ? 'Créer ton compte' : 'Connexion'}</h2><button class="icon-btn" data-act="close-modal">✕</button></div>
-    <p class="small muted" style="margin-bottom:14px">${signup ? 'Gratuit. Tes données actuelles seront sauvegardées dans ton compte.' : 'Retrouve ton programme et ton suivi.'}</p>
+    <p class="small muted" style="margin-bottom:14px">${signup ? 'Gratuit. Tes données actuelles seront sauvegardées dans ton compte.' : 'Retrouve ton programme et ton suivi.'}</p>${inAppNote()}
     <button class="btn block google-btn" data-act="auth-google"><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Continuer avec Google</button>
     <div class="or"><span>ou</span></div>
     <div class="col"><input id="au-email" class="input" type="email" inputmode="email" autocomplete="email" placeholder="Adresse e-mail">
@@ -1537,7 +1542,7 @@ function calcDetails(t, p) {
       <li><b>Dépense du jour :</b> × ${String(t.pal).replace('.', ',')} (${act.toLowerCase()} + ${p.days} séance${p.days > 1 ? 's' : ''}/semaine) = <b>${fmt(t.tdee)} kcal</b>.</li>
       <li><b>Objectif :</b> ${goalTxt} → <b>${fmt(t.kcal)} kcal</b>.</li>
       <li><b>Protéines :</b> ${String(t.protPerKg).replace('.', ',')} g × ${t.refW} kg${t.refW < Math.round(w) ? ' (poids de référence)' : ''} = ${t.prot} g. Lipides ≈ 27 % des calories, glucides = le reste.</li>
-      <li><b>Eau à boire :</b> ${t.perKg} ml par kilo${t.refW < Math.round(w) ? ' (poids corrigé)' : ''} = ${(t.waterBase / 1000).toFixed(1).replace('.', ',')} L, +0,5 L les jours de sport${['DZ', 'MA', 'TN', 'SN', 'CI'].includes(p.country) ? ', +0,5 L de mai à septembre (chaleur)' : ''}. L'eau des aliments et des soupes s'ajoute en plus.</li>
+      <li><b>Eau à boire :</b> ${t.perKg} ml par kilo${t.refW < Math.round(w) ? ' (poids corrigé)' : ''} = ${(t.waterBase / 1000).toFixed(1).replace('.', ',')} L, +0,5 L les jours de sport${['DZ', 'MA', 'TN', 'SN', 'CI'].includes(p.country) ? ', +0,3 L de juin à septembre (chaleur)' : ''}. C'est l'eau à <b>boire</b> (eau, thé, lait…) : l'eau des aliments et des soupes s'ajoute en plus. Repère officiel (EFSA) : environ 2 L de boissons par jour pour un homme, 1,6 L pour une femme.</li>
     </ul></details>`;
 }
 if (!S.settings?.keepSkinPhotos && S.skin?.photos?.length) { S.skin.photos = []; save(); }
