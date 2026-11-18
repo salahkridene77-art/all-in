@@ -75,6 +75,7 @@ Règles essentielles :
 - Pour ce qu'elle fait déjà bien, va plus loin si c'est utile (ex. elle met un SPF tous les jours → quantité, renouvellement, texture adaptée à sa peau), sinon félicite-la simplement dans deja_bien.
 - deja_bien : 2 à 4 points courts sur ce qu'elle fait bien, formulés positivement.
 - nouveautes : 4 à 6 conseils NOUVEAUX et précis, chacun relié à un constat de l'analyse ou à une réponse « à améliorer » (titre court + detail de 1 à 2 phrases concrètes : quoi, comment, à quelle fréquence, et en quoi ça répond à ce qu'on voit sur sa peau). Évite les généralités.
+- Quand un conseil de nouveautes porte sur un ingrédient actif, mets dans son champ ingredient le nom EXACT de cet ingrédient tel qu'il apparaît dans privilegier (sinon laisse ingredient vide). Tout ingrédient cité dans nouveautes ou dans la routine doit figurer dans privilegier.
 - routine : matin, soir et chaque semaine, étapes courtes et concrètes, adaptées à ce qu'on voit (ex. « Sérum niacinamide sur la zone T » plutôt que « sérum »). Dans la routine, les gestes qu'elle fait déjà restent, suivis de « (tu le fais déjà ✓) ».
 - Tutoiement, français simple, ton bienveillant.`;
 
@@ -99,7 +100,14 @@ const PRODUCT_RULES = (country) => `Produits à recommander (champ products) :
 - Champ pourquoi : une phrase simple, en français, avec tutoiement, qui relie le produit à la peau de la personne.
 
 Ingrédients (champs privilegier et eviter) :
-- privilegier : 3 à 5 ingrédients actifs vraiment utiles pour CETTE peau (ingredient : nom court comme « Niacinamide » ou « Acide salicylique » ; pourquoi : une phrase simple). Pas d'ingrédients contradictoires entre eux.
+- privilegier : 3 à 5 ingrédients actifs vraiment utiles pour CETTE peau. Pas d'ingrédients contradictoires entre eux. Pour chacun, explique comme à quelqu'un qui n'y connaît rien :
+  · ingredient : nom court (ex. « Acide salicylique », « Niacinamide »), avec son autre nom courant entre parenthèses s'il existe (ex. « Acide salicylique (BHA) »).
+  · cest_quoi : ce que c'est exactement, en 1 phrase simple (ex. « Un acide exfoliant qui vient à l'origine de l'écorce de saule »).
+  · effet : ce que ça va faire concrètement à SA peau, relié à ce qu'on voit (ex. « Il entre dans tes pores du nez pour dissoudre le sébum qui forme les points noirs ») et en combien de temps on voit un résultat.
+  · utilisation : comment l'utiliser (concentration habituelle, quel moment de la journée, combien de fois par semaine, sur quelle zone).
+  · precautions : ce qu'il faut savoir (picotements possibles, à ne pas mélanger avec…, SPF obligatoire, grossesse…), ou « Aucune précaution particulière ».
+  · pourquoi : en une phrase, pourquoi c'est conseillé pour SA peau.
+  · produits : 2 ou 3 produits RÉELS vendus dans son pays qui contiennent cet ingrédient (marque, produit, prix approximatif dans la monnaie locale, où l'acheter), avec au moins un petit prix. Mêmes règles que pour les produits : uniquement des produits dont tu es certain qu'ils existent et qu'ils contiennent bien cet ingrédient.
 - eviter : 3 à 5 ingrédients ou types de produits à éviter pour cette peau (quoi, pourquoi, exemples : les types de produits courants dans ce pays qui en contiennent souvent, par exemple « savons solides classiques, gommages aux grains » — SANS citer de marque).
 - Chaque produit recommandé doit contenir au moins un ingrédient de privilegier : liste-les dans contient en reprenant EXACTEMENT les mêmes noms. Aucun produit ne doit contenir un élément de eviter.`;
 
@@ -120,7 +128,10 @@ const PRODUCT_LIST = S('ARRAY', { items: S('OBJECT', {
   required: ['etape', 'marque', 'produit', 'contient', 'pourquoi', 'prix', 'ou', 'budget'],
 }) });
 const INGR = {
-  privilegier: S('ARRAY', { items: S('OBJECT', { properties: { ingredient: S('STRING'), pourquoi: S('STRING') }, required: ['ingredient', 'pourquoi'] }) }),
+  privilegier: S('ARRAY', { items: S('OBJECT', { properties: {
+    ingredient: S('STRING'), cest_quoi: S('STRING'), effet: S('STRING'), utilisation: S('STRING'), precautions: S('STRING'), pourquoi: S('STRING'),
+    produits: S('ARRAY', { items: S('OBJECT', { properties: { marque: S('STRING'), produit: S('STRING'), prix: S('STRING'), ou: S('STRING') }, required: ['marque', 'produit', 'prix', 'ou'] }) }),
+  }, required: ['ingredient', 'cest_quoi', 'effet', 'utilisation', 'precautions', 'pourquoi', 'produits'] }) }),
   eviter: S('ARRAY', { items: S('OBJECT', { properties: { quoi: S('STRING'), pourquoi: S('STRING'), exemples: S('STRING') }, required: ['quoi', 'pourquoi', 'exemples'] }) }),
 };
 const SCHEMAS = {
@@ -158,7 +169,7 @@ const SCHEMAS = {
   skinplan: S('OBJECT', {
     properties: {
       deja_bien: S('ARRAY', { items: S('STRING') }),
-      nouveautes: S('ARRAY', { items: S('OBJECT', { properties: { titre: S('STRING'), detail: S('STRING') }, required: ['titre', 'detail'] }) }),
+      nouveautes: S('ARRAY', { items: S('OBJECT', { properties: { titre: S('STRING'), detail: S('STRING'), ingredient: S('STRING') }, required: ['titre', 'detail'] }) }),
       routine: S('OBJECT', { properties: { matin: S('ARRAY', { items: S('STRING') }), soir: S('ARRAY', { items: S('STRING') }), semaine: S('ARRAY', { items: S('STRING') }) }, required: ['matin', 'soir', 'semaine'] }),
       ...INGR,
       products: PRODUCT_LIST,

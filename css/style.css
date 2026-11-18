@@ -407,3 +407,7 @@ details.calc li { font-size: 13px; }
 .zone-row { padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .zone-row:last-child { border-bottom: 0; padding-bottom: 0; }
 .new-tips { border: 1px solid rgba(255,126,182,.35); background: linear-gradient(180deg, rgba(255,126,182,.08), var(--card)); }
+
+.ing-row { display: flex; align-items: flex-start; gap: 8px; padding: 10px; border-radius: 14px; background: var(--card2); }
+.ing-sec { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.ing-sec:last-child { border-bottom: 0; }

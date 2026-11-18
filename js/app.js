@@ -1046,7 +1046,7 @@ function skinResult(r) {
   return `<div class="card"><div class="skin-score">${ring(r.score / 100, { size: 110, stroke: 11, color: 'var(--skin)', inner: `<div><div class="mid-num">${r.score}</div><div class="xs muted">/ 100</div></div>` })}
       <div class="grow"><div class="xs upper muted">Score de ta skincare</div><h2 style="margin-top:4px;font-size:18px">${r.verdict}</h2></div></div></div>
     ${skinAiCard(r)}
-    ${plan ? `${plan.nouveautes.length ? `<div class="card section new-tips"><h3>✨ Tes nouveaux conseils</h3><p class="xs muted" style="margin-top:3px">Basés sur ce que l'IA voit sur ta peau et sur tes réponses</p><div class="col" style="margin-top:12px;gap:12px">${plan.nouveautes.map((x, i) => `<div class="routine-step" style="border:0;padding:0"><span class="n" style="background:rgba(255,126,182,.18);color:var(--skin)">${i + 1}</span><div class="grow"><b class="small">${esc(x.titre)}</b><p class="small muted" style="margin-top:3px;line-height:1.5">${esc(x.detail)}</p></div></div>`).join('')}</div></div>` : ''}
+    ${plan ? `${plan.nouveautes.length ? `<div class="card section new-tips"><h3>✨ Tes nouveaux conseils</h3><p class="xs muted" style="margin-top:3px">Basés sur ce que l'IA voit sur ta peau et sur tes réponses</p><div class="col" style="margin-top:12px;gap:12px">${plan.nouveautes.map((x, i) => `<div class="routine-step" style="border:0;padding:0"><span class="n" style="background:rgba(255,126,182,.18);color:var(--skin)">${i + 1}</span><div class="grow"><b class="small">${esc(x.titre)}</b><p class="small muted" style="margin-top:3px;line-height:1.5">${esc(x.detail)}</p>${ingIndex(r, x.ingredient) >= 0 ? `<button class="btn sm" style="margin-top:8px;height:34px;background:rgba(255,126,182,.14);color:var(--skin)" data-act="ing-open" data-i="${ingIndex(r, x.ingredient)}">🧪 ${esc(r.reco.privilegier[ingIndex(r, x.ingredient)].ingredient)} : c'est quoi, où l'acheter ›</button>` : ''}</div></div>`).join('')}</div></div>` : ''}
       ${plan.deja_bien.length ? `<div class="card section"><h3>✅ Ce que tu fais déjà bien</h3><ul class="list-plain" style="margin-top:10px">${plan.deja_bien.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}`
     : `${r.good.length ? `<div class="card section"><h3>✅ Ce que tu fais déjà bien</h3><ul class="list-plain" style="margin-top:10px">${r.good.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''}
     ${r.improve.length ? `<div class="card section"><h3>🎯 À améliorer en priorité</h3><ul class="list-plain" style="margin-top:10px">${r.improve.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''}`}
@@ -1100,7 +1100,7 @@ function viewProfil() {
     <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">${cloud.user ? 'Tes données sont sur ce téléphone et sauvegardées dans ton compte. Les photos de peau restent uniquement sur ce téléphone.' : 'Tout est enregistré sur ce téléphone. Crée un compte pour les sauvegarder, ou exporte une copie avant de changer d\'appareil.'}</p>
       <div class="row" style="margin-top:12px"><button class="btn grow sm" data-act="export">⬇ Exporter</button><label class="btn grow sm" style="cursor:pointer">⬆ Importer<input type="file" accept="application/json,.json" data-on="import" hidden></label></div>
       <button class="btn danger block sm" style="margin-top:8px" data-act="reset">Effacer toutes mes données</button></div>
-    <p class="note center section">All In · version 2.9</p></div>`;
+    <p class="note center section">All In · version 2.9.1</p></div>`;
 }
 
 /* ============================================================
@@ -1450,6 +1450,33 @@ function skinAiCard(r) {
       ${a.seeDoctor ? `<div class="card flat" style="background:rgba(255,93,93,.1);margin-top:12px"><p class="small" style="color:var(--danger)"><b>À montrer à un dermatologue :</b> ${esc(a.seeDoctorReason || 'une zone mérite l\'avis d\'un professionnel.')}</p></div>` : ''}` : `<button class="btn block" style="margin-top:12px;background:var(--skin);color:#1a0a12" data-act="skin-start">Refaire une photo</button>`}</div>`;
 }
 
+/* ---------- Fiche ingrédient : c'est quoi, effet, utilisation, produits du pays ---------- */
+function ingIndex(r, name) {
+  const list = r?.reco?.privilegier || [];
+  if (!name) return -1;
+  const n = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\(.*?\)/g, '').trim();
+  return list.findIndex((x) => n(x.ingredient) === n(name) || n(x.ingredient).startsWith(n(name)) || n(name).startsWith(n(x.ingredient)));
+}
+function ingredientModal(i) {
+  const x = S.skin.result?.reco?.privilegier?.[i];
+  if (!x) return;
+  const info = D.INGREDIENT_INFO[Object.keys(D.INGREDIENT_INFO).find((k) => x.ingredient.toLowerCase().includes(k))] || {};
+  const c = countryInfo();
+  const sec = (ico, t, v) => (v ? `<div class="ing-sec"><div class="xs upper muted">${ico} ${t}</div><p class="small" style="margin-top:5px;line-height:1.55">${esc(v)}</p></div>` : '');
+  const prods = x.produits || [];
+  openModal(`<div class="modal-head"><div><div class="xs upper muted">Ingrédient conseillé</div><h2 style="margin-top:3px">🧪 ${esc(x.ingredient)}</h2></div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    ${sec('❓', 'C\'est quoi ?', x.cest_quoi || info.quoi)}
+    ${sec('✨', 'Ce que ça va faire à ta peau', x.effet || info.effet)}
+    ${sec('🎯', 'Pourquoi pour toi', x.pourquoi)}
+    ${sec('🕐', 'Comment l\'utiliser', x.utilisation || info.usage)}
+    ${sec('⚠️', 'À savoir', x.precautions || info.prec)}
+    <div class="ing-sec"><div class="xs upper muted">🛍 Où en trouver · ${c.flag} ${esc(c.label)}</div>
+      ${prods.length ? `<div class="col" style="margin-top:8px;gap:8px">${prods.map((p) => `<div class="card flat" style="background:var(--card2);padding:12px"><b class="small">${esc(p.marque)} · ${esc(p.produit)}</b><p class="xs" style="margin-top:4px">${p.prix ? `💰 ${esc(p.prix)}` : ''}${p.ou ? ` · 📍 ${esc(p.ou)}` : ''}</p></div>`).join('')}</div>
+        <p class="note" style="margin-top:8px">Suggestions de l'IA : vérifie sur l'étiquette que l'ingrédient figure bien dans la composition (liste « INCI »).</p>`
+      : `<p class="small muted" style="margin-top:6px;line-height:1.5">Regarde les produits conseillés plus bas : ceux qui contiennent cet ingrédient sont marqués « ✓ ${esc(x.ingredient)} ».</p>`}</div>`);
+}
+Object.assign(A, { 'ing-open': (el) => ingredientModal(Number(el.dataset.i)) });
+
 function skinScanCard(a) {
   if (a.quality === 'bad') return `<div class="card section ai-card"><h3>🔬 Analyse de ta peau</h3><p class="small" style="margin-top:8px;color:var(--food)">${esc(a.qualityNote || 'Photos difficiles à analyser.')}</p><button class="btn block" style="margin-top:12px;background:var(--skin);color:#1a0a12" data-act="skin-start">Refaire le scan</button></div>`;
   const col = (v) => (v >= 75 ? 'var(--steps)' : v >= 50 ? 'var(--food)' : 'var(--danger)');
@@ -1672,7 +1699,7 @@ function ingredientsCard(r, aiOnly = false) {
     if (!aiOnly) return '';
     return `<div class="card section"><h3>🧪 Ingrédients pour ta peau</h3>
       <div class="xs upper muted" style="margin-top:12px">À privilégier</div>
-      <div class="col" style="margin-top:8px;gap:8px">${reco.privilegier.map((x) => `<div><span class="ing-chip use">✓ ${esc(x.ingredient)}</span><p class="xs muted" style="margin:-2px 0 0 4px;line-height:1.45">${esc(x.pourquoi)}</p></div>`).join('')}</div>
+      <div class="col" style="margin-top:8px;gap:8px">${reco.privilegier.map((x, i) => `<div class="ing-row tap" data-act="ing-open" data-i="${i}"><div class="grow"><span class="ing-chip use" style="margin:0">✓ ${esc(x.ingredient)}</span><p class="xs muted" style="margin:6px 0 0 2px;line-height:1.45">${esc(x.cest_quoi || x.pourquoi)}</p>${x.produits?.length ? `<p class="xs" style="margin:5px 0 0 2px;color:var(--skin);font-weight:700">🛍 ${x.produits.length} produit${x.produits.length > 1 ? 's' : ''} en ${esc(countryInfo().label)} · voir le détail ›</p>` : `<p class="xs" style="margin:5px 0 0 2px;color:var(--skin);font-weight:700">En savoir plus ›</p>`}</div></div>`).join('')}</div>
       ${(reco.eviter || []).length ? `<div class="xs upper muted" style="margin-top:14px">À éviter</div>
       <div class="col" style="margin-top:8px;gap:8px">${reco.eviter.map((x) => `<div><span class="ing-chip avoid">✕ ${esc(x.quoi)}</span><p class="xs muted" style="margin:-2px 0 0 4px;line-height:1.45">${esc(x.pourquoi)}${x.exemples ? ` <span style="color:var(--text)">Souvent dans : ${esc(x.exemples)}.</span>` : ''}</p></div>`).join('')}</div>` : ''}</div>`;
   }

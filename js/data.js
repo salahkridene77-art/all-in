@@ -598,3 +598,17 @@ export const SCAN_ANGLES = [
   { id: 'gauche', label: 'Côté gauche', hint: '⬅ Tourne doucement la tête vers ta gauche', wait: 4 },
   { id: 'droite', label: 'Côté droit', hint: 'Tourne doucement la tête vers ta droite ➡', wait: 4 },
 ];
+
+/* Fiches ingrédients de base (utilisées si l'IA n'a pas donné le détail) */
+export const INGREDIENT_INFO = {
+  'salicylique': { quoi: 'Un acide exfoliant (BHA) qui se dissout dans le gras de la peau.', effet: 'Il entre dans les pores pour dissoudre le sébum qui forme points noirs et boutons. Résultat visible en 4 à 6 semaines.', usage: 'Le soir, 2 à 3 fois par semaine au début, sur les zones à points noirs.', prec: 'Peut picoter ou dessécher au début. Protection solaire le lendemain.' },
+  'niacinamide': { quoi: 'Une forme de vitamine B3, très bien tolérée.', effet: 'Régule le sébum, resserre l\'aspect des pores, apaise les rougeurs et atténue les marques. Résultat en 6 à 8 semaines.', usage: 'Sérum à 5-10 %, matin ou soir, sur tout le visage.', prec: 'Aucune précaution particulière.' },
+  'hyaluronique': { quoi: 'Une molécule présente naturellement dans la peau qui retient l\'eau.', effet: 'Repulpe et hydrate la peau tout de suite, atténue les ridules de déshydratation.', usage: 'Sur peau encore humide, matin et soir, avant la crème.', prec: 'Aucune précaution particulière.' },
+  'vitamine c': { quoi: 'Un antioxydant puissant.', effet: 'Donne de l\'éclat, protège de la pollution et atténue les taches. Résultat en 4 à 8 semaines.', usage: 'Le matin, avant la crème et la protection solaire.', prec: 'Peut picoter. Garde le flacon à l\'abri de la lumière.' },
+  'retinol': { quoi: 'Un dérivé de la vitamine A.', effet: 'Accélère le renouvellement de la peau : affine le grain, atténue ridules, taches et marques. Résultat en 8 à 12 semaines.', usage: 'Le soir seulement, 2 soirs par semaine au début.', prec: 'Irritant au début. SPF obligatoire. Déconseillé pendant la grossesse.' },
+  'azelaique': { quoi: 'Un acide d\'origine naturelle (céréales), doux pour la peau.', effet: 'Atténue rougeurs, boutons et taches brunes.', usage: 'Matin et/ou soir, sur les zones concernées.', prec: 'Peut picoter légèrement les premiers jours.' },
+  'zinc': { quoi: 'Un minéral apaisant et purifiant.', effet: 'Limite la brillance et calme les petits boutons.', usage: 'Dans le nettoyant ou le sérum, tous les jours.', prec: 'Aucune précaution particulière.' },
+  'centella': { quoi: 'Une plante asiatique apaisante (centella asiatica, ou « cica »).', effet: 'Calme les rougeurs et aide la peau irritée à se réparer.', usage: 'Matin et soir, en sérum ou en crème.', prec: 'Aucune précaution particulière.' },
+  'ceramide': { quoi: 'Des lipides qui forment le « ciment » entre les cellules de la peau.', effet: 'Réparent la barrière de la peau : moins de tiraillements, moins de sensibilité.', usage: 'Dans la crème hydratante, matin et soir.', prec: 'Aucune précaution particulière.' },
+  'glycolique': { quoi: 'Un acide exfoliant (AHA) issu de la canne à sucre.', effet: 'Élimine les cellules mortes en surface : teint plus lumineux et grain plus lisse.', usage: 'Le soir, 1 à 3 fois par semaine.', prec: 'Peut irriter. SPF obligatoire le lendemain.' },
+};
