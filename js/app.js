@@ -3,7 +3,7 @@
    ============================================================ */
 import * as D from './data.js';
 import {
-  S, save, resetAll, replaceState, today, day, peekDay, lastDays, dayLetter, addDays, parseKey, weekdayMon,
+  S, save, saveQuiet, resetAll, replaceState, today, day, peekDay, lastDays, dayLetter, addDays, parseKey, weekdayMon,
   DAY_SHORT, DAY_NAMES, prettyDate, shortDate, targets, bmi, currentWeight, dayNutrition, sleepMinutes, fmtDur,
   buildPlan, todaySession, streak, dayScore, isTrainingDay, weekNumber, isLightWeek, recordFeedback, weekKey, mondayOf, esc, fmt, ring, bar, barChart, lineChart, toast, openModal, closeModal, beep, pad, onSave,
 } from './core.js';
@@ -46,7 +46,7 @@ function render() {
     if (!ui.ob) ui.ob = newOb(true);
     app.innerHTML = viewOnboarding();
   } else {
-    const views = { home: viewHome, sport: viewSport, wk: viewWorkout, coach: viewCoach, nutrition: viewNutrition, suivi: () => viewSuivi(sub || 'eau'), peau: viewPeau, profil: viewProfil, premium: viewPremium, bilan: viewBilan };
+    const views = { home: viewHome, sport: viewSport, wk: viewWorkout, coach: viewCoach, nutrition: viewNutrition, suivi: () => viewSuivi(sub || 'eau'), peau: viewPeau, profil: viewProfil, premium: viewPremium, bilan: viewBilan, progres: viewProgres, infos: viewInfos };
     const v = views[page] || viewHome;
     const noNav = page === 'wk';
     app.innerHTML = v() + (noNav ? '' : nav(page));
@@ -57,6 +57,7 @@ function render() {
 const rerender = () => { const y = window.scrollY; render(); window.scrollTo(0, y); };
 
 function afterRender(page) {
+  if (S.profile && page !== 'wk') checkBadges();
   if (page === 'coach' && ui.scrollChat) { ui.scrollChat = false; requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight)); }
   if (page === 'home' && S.profile && cloud.user && (!S.brief || S.brief.date !== today()) && !ui.briefLoading && !ui.briefError) fetchBrief();
   if (page === 'peau' && ui.skin.step === 'photo' && !ui.skin.photo && !ui.skin.camError) startCamera();
@@ -66,7 +67,7 @@ function afterRender(page) {
 
 function nav(page) {
   const tabs = [['home', '🏠', 'Accueil'], ['sport', '🏋️', 'Sport'], ['coach', '🤖', 'Coach'], ['nutrition', '🥗', 'Nutrition'], ['suivi', '📊', 'Suivi'], ['peau', '✨', 'Peau']];
-  return `<nav class="nav"><div class="nav-in">${tabs.map(([k, i, l]) => `<a href="#/${k}" class="${page === k || (k === 'home' && ['profil', 'premium', 'bilan'].includes(page)) ? 'on' : ''}"><span class="i">${i}</span>${l}</a>`).join('')}</div></nav>`;
+  return `<nav class="nav"><div class="nav-in">${tabs.map(([k, i, l]) => `<a href="#/${k}" class="${page === k || (k === 'home' && ['profil', 'premium', 'bilan', 'progres', 'infos'].includes(page)) ? 'on' : ''}"><span class="i">${i}</span>${l}</a>`).join('')}</div></nav>`;
 }
 
 function header(title, { back = null, right = '' } = {}) {
@@ -226,7 +227,8 @@ function viewHome() {
     <div class="card"><div class="row between" style="margin-bottom:12px"><div class="xs upper muted">Score du jour</div>${st ? `<span class="pill on">🔥 ${st} jour${st > 1 ? 's' : ''}</span>` : ''}</div>
       <div class="hero-score">${ring(score / 100, { size: 118, stroke: 11, inner: `<div><div class="mid-num">${score}</div><div class="xs muted">/ 100</div></div>` })}
         <div class="score-legend">${parts.map(([l, v, c]) => `<div class="l"><span>${l}</span>${bar(v, c)}<b>${Math.round(v * 100)}%</b></div>`).join('')}</div></div>
-      <p class="small" style="margin-top:12px;font-weight:700">${verdict}</p></div>
+      <p class="small" style="margin-top:12px;font-weight:700">${verdict}</p>
+      <div style="margin-top:14px">${levelChip()}</div></div>
 
     ${nudgeCard() ? `<div class="section">${nudgeCard()}</div>` : ''}
     ${reviewCard() ? `<div class="section">${reviewCard()}</div>` : ''}
@@ -248,7 +250,8 @@ function viewHome() {
     <div class="section card tap" data-act="go" data-to="peau"><div class="row"><div class="mini-card" style="padding:0;border:0;background:none"><div class="ico bg-skin" style="width:46px;height:46px;border-radius:14px;font-size:22px">✨</div></div>
       <div class="grow"><h3>${sk ? `Skincare : ${sk.score}/100` : 'Scan de ta peau'}</h3><p class="small muted" style="margin-top:3px">${sk ? `${D.SKIN_TYPES[sk.type].label} · dernier scan le ${shortDate(sk.date)}` : 'Découvre ton type de peau et la routine qu\'il te faut'}</p></div><span class="dim">›</span></div></div>
 
-    <div class="section card flat" style="background:var(--card2)"><div class="tip-card"><span class="ico">💡</span><div><div class="xs upper muted">Conseil du jour</div><p style="margin-top:5px;line-height:1.5">${tipOfDay()}</p></div></div></div>
+    <div class="section">${factCard()}</div>
+    <div class="section card flat" style="background:var(--card2)"><div class="tip-card"><span class="ico">🎯</span><div><div class="xs upper muted">Conseil pour ton objectif</div><p style="margin-top:5px;line-height:1.5">${tipOfDay()}</p></div></div></div>
   </div>`;
 }
 
@@ -397,10 +400,11 @@ function viewWorkout() {
   }
   if (w.phase === 'rest') {
     const tot = exs[w.set === 1 ? w.ex - 1 : w.ex]?.rest || 60;
+    const restFact = factAt(['sport', 'eau', 'nutrition'][(w.ex + w.set) % 3], w.ex * 3 + w.set + doy());
     const lightTxt = isLightWeek() ? '<p class="xs muted">Semaine légère : une série de moins</p>' : '';
     return `<div class="view no-nav workout">${top}${prog}<div class="wk-main"><div class="xs upper muted">Repos</div>
       <div class="rest-ring">${ring(w.left / tot, { size: 210, stroke: 14, color: 'var(--water)', inner: `<div><div class="t">${w.left}</div><div class="small muted">secondes</div></div>` })}</div>
-      <div class="card" style="width:100%;text-align:left"><div class="xs upper muted">À suivre</div><div class="row" style="margin-top:8px"><span style="font-size:28px">${e.icon}</span><div><b>${e.name}</b><div class="small muted">Série ${w.set} / ${e.sets} · ${e.target}</div></div></div></div>${lightTxt}</div>
+      <div class="card" style="width:100%;text-align:left"><div class="xs upper muted">À suivre</div><div class="row" style="margin-top:8px"><span style="font-size:28px">${e.icon}</span><div><b>${e.name}</b><div class="small muted">Série ${w.set} / ${e.sets} · ${e.target}</div></div></div></div>${lightTxt}<div class="card flat" style="width:100%;text-align:left;background:var(--card2)">${factHtml(restFact)}</div></div>
       <div class="row"><button class="btn grow" data-act="rest-add">+15 s</button><button class="btn primary grow" data-act="rest-skip">Passer le repos</button></div></div>`;
   }
 
@@ -747,6 +751,17 @@ function startSkinAi(data) {
   return run;
 }
 
+/* Questions du scan : les essentielles + 5 tirées au sort (en priorité celles pas posées la dernière fois) */
+function pickSkinQuestions() {
+  const last = new Set(S.skin.qs || []);
+  const pool = D.SKIN_Q_POOL.filter((q) => !q.core);
+  const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map((x) => x[1]);
+  const pick = [...shuffle(pool.filter((q) => !last.has(q.id))), ...shuffle(pool.filter((q) => last.has(q.id)))].slice(0, 5);
+  const qs = [...D.SKIN_Q_POOL.filter((q) => q.core), ...shuffle(pick)].map((q) => q.id);
+  return { qs, feelQ: D.SKIN_FEEL_VARIANTS[Math.floor(Math.random() * D.SKIN_FEEL_VARIANTS.length)], factI: Math.floor(Math.random() * 100) };
+}
+const skinQs = (sk) => (sk.qs?.length ? sk.qs : Object.keys(sk.answers || {})).map((id) => D.SKIN_Q_POOL.find((q) => q.id === id)).filter(Boolean);
+
 /* Les observations de l'IA remplissent la carte du visage */
 function zonesFromAi(r) {
   const z = {};
@@ -764,7 +779,7 @@ function startSkin(force = false) {
       <button class="btn ghost block sm" style="margin-top:8px" data-act="skin-gate" data-mode="manual">Continuer sans l'IA</button>`);
     return;
   }
-  ui.skin = { step: 'photo', sel: null, photo: null, zones: {}, feel: S.skin.feel, answers: { ...S.skin.answers }, camError: false, manual: false, lightWarn: false, aiStatus: null, aiRes: null, aiPromise: null };
+  ui.skin = { step: 'photo', sel: null, photo: null, zones: {}, feel: null, answers: {}, ...pickSkinQuestions(), camError: false, manual: false, lightWarn: false, aiStatus: null, aiRes: null, aiPromise: null };
   rerender();
 }
 
@@ -801,30 +816,17 @@ function computeSkin(aiRes = null) {
   if (sk.feel === 'reagit') concerns.add('rougeurs');
   if (aiRes && aiRes.quality !== 'bad') (aiRes.observations || []).forEach((o) => { if (D.SKIN_ISSUES[o.issue]) concerns.add(o.issue); });
 
-  let score = 0;
+  let score = 0, maxScore = 0;
   const good = [], improve = [];
-  const fixes = {
-    clean_pm: 'Nettoie ton visage chaque soir : sébum, pollution et crème solaire bouchent les pores pendant la nuit.',
-    moist: 'Hydrate ta peau matin et soir, même si elle est grasse.',
-    spf: 'Mets un SPF tous les jours, même quand il fait gris : c\'est le meilleur anti-taches et anti-âge.',
-    exfo_daily: 'Exfolier tous les jours abîme la barrière de la peau : limite-toi à 1 ou 2 fois par semaine.',
-    exfo_never: 'Une exfoliation douce 1 à 2 fois par semaine aide à désincruster les pores et à raviver l\'éclat.',
-    adapted: 'Le savon classique décape la peau : passe à un nettoyant doux adapté à ton type de peau.',
-    touch: 'Toucher et percer les boutons propage les bactéries et laisse des marques brunes.',
-    pillow: 'Change ta taie d\'oreiller chaque semaine : elle accumule sébum et bactéries.',
-    sleep: 'Dors 7 h ou plus : la peau se répare surtout la nuit (et les cernes diminuent).',
-  };
-  const goods = { clean_pm: 'Nettoyage du soir régulier', moist: 'Hydratation quotidienne', spf: 'Protection solaire tous les jours', exfo: 'Exfoliation à la bonne fréquence', adapted: 'Produits adaptés à ta peau', touch: 'Tu ne touches pas tes boutons', pillow: 'Taie d\'oreiller changée souvent', sleep: 'Bon sommeil' };
-  D.SKIN_ROUTINE_Q.forEach((q) => {
-    const a = sk.answers[q.id];
-    const opt = q.opts[a];
+  skinQs(sk).forEach((q) => {
+    const opt = q.opts[sk.answers[q.id]];
     if (!opt) return;
     const max = Math.max(...q.opts.map((o) => o[1]));
-    score += opt[1];
-    if (opt[1] === max) good.push(goods[q.id]);
-    else if (q.id === 'exfo') improve.push(a === 2 ? fixes.exfo_daily : fixes.exfo_never);
-    else improve.push(fixes[q.id]);
+    score += opt[1]; maxScore += max;
+    if (opt[1] === max) good.push(q.good);
+    else improve.push(opt[2] || q.fix);
   });
+  score = maxScore ? (score / maxScore) * 100 : 0;
 
   const T = D.SKIN_TYPES[type];
   const has = (c) => concerns.has(c);
@@ -860,7 +862,8 @@ async function finishSkin() {
   if (aiRes && aiRes.quality !== 'bad') ui.skin.zones = zonesFromAi(aiRes);
   const res = computeSkin(aiRes);
   if (aiRes) res.reco = { privilegier: aiRes.privilegier || [], eviter: aiRes.eviter || [], products: aiRes.products || [] };
-  S.skin.zones = ui.skin.zones; S.skin.feel = ui.skin.feel; S.skin.answers = ui.skin.answers; S.skin.result = res;
+  S.skin.zones = ui.skin.zones; S.skin.feel = ui.skin.feel; S.skin.answers = ui.skin.answers; S.skin.qs = ui.skin.qs; S.skin.result = res;
+  S.skin.history = [...(S.skin.history || []).filter((x) => x.date !== res.date), { date: res.date, score: res.score, n: res.concerns.length, type: res.type }].slice(-24);
   save();
   ui.skin.aiPromise = null; ui.skin.pending = null; // la photo est oubliée
   ui.skin.step = 'result';
@@ -879,7 +882,8 @@ function viewPeau() {
   else if (sk.step === 'zones') body = skinZones();
   else if (sk.step === 'questions') body = skinQuestions();
   else if (sk.step === 'result') body = skinResult(S.skin.result);
-  else if (sk.step === 'analyzing') body = `<div class="card center" style="padding:40px 20px"><div class="spin"></div><h3 style="margin-top:16px">L'IA termine l'analyse…</h3><p class="small muted" style="margin-top:6px">Elle examine ta peau zone par zone et cherche des produits vendus en ${esc(countryInfo().label)}.</p></div>`;
+  else if (sk.step === 'analyzing') body = `<div class="card center" style="padding:40px 20px"><div class="spin"></div><h3 style="margin-top:16px">L'IA termine l'analyse…</h3><p class="small muted" style="margin-top:6px">Elle examine ta peau zone par zone et cherche des produits vendus en ${esc(countryInfo().label)}.</p></div>
+    <div class="card flat section" style="background:var(--card2)">${factHtml(factAt('peau', doy() + 3))}</div>`;
   else body = skinHome();
   const back = sk.step ? `<button class="back" data-act="skin-back" aria-label="Retour">←</button>` : '';
   return `<div class="view"><div class="top">${back}<h1 class="grow">${sk.step === 'result' ? 'Ton analyse' : 'Peau'}</h1>${stepIdx ? `<span class="small muted">Étape ${stepIdx}/${total}</span>` : ''}</div>${ind}${body}</div>`;
@@ -935,14 +939,15 @@ function skinZones() {
 
 function skinQuestions() {
   const sk = ui.skin;
-  const done = sk.feel && D.SKIN_ROUTINE_Q.every((q) => sk.answers[q.id] !== undefined);
+  const qs = skinQs(sk);
+  const done = sk.feel && qs.every((q) => sk.answers[q.id] !== undefined);
   const st = sk.aiStatus;
   const banner = st === 'running' ? `<div class="card flat ai-status"><div class="spin sm"></div><div><b class="small">L'IA analyse ta photo…</b><p class="xs muted" style="margin-top:2px">Réponds aux questions pendant ce temps.</p></div></div>`
     : st === 'done' ? `<div class="card flat ai-status"><span style="font-size:20px">✅</span><div><b class="small">Analyse de ta photo terminée</b><p class="xs muted" style="margin-top:2px">${(sk.aiRes?.observations || []).length} point${(sk.aiRes?.observations || []).length > 1 ? 's' : ''} repéré${(sk.aiRes?.observations || []).length > 1 ? 's' : ''} sur ta peau. Le détail est dans ton résultat.</p></div></div>`
     : st === 'error' ? `<div class="card flat ai-status" style="flex-wrap:wrap"><span style="font-size:20px">⚠️</span><div class="grow"><b class="small">L'analyse de ta photo n'a pas abouti</b><p class="xs muted" style="margin-top:2px">${esc(sk.aiError)}</p></div>${sk.pending ? `<button class="btn sm" style="width:100%;margin-top:6px;background:var(--skin);color:#1a0a12" data-act="skin-retry">↻ Relancer l'analyse</button>` : ''}</div>` : '';
   return `${banner}<p class="muted small" style="margin-top:${banner ? 14 : 0}px">Réponds honnêtement : c'est ce qui permet de juger ta skincare actuelle.</p>
-    <div class="q-block"><div class="q">${D.SKIN_FEEL_Q.q}</div><div class="opt-list">${D.SKIN_FEEL_Q.opts.map(([k, l]) => `<button class="opt ${sk.feel === k ? 'on' : ''}" data-act="skin-feel" data-v="${k}">${l}</button>`).join('')}</div></div>
-    ${D.SKIN_ROUTINE_Q.map((q) => `<div class="q-block"><div class="q">${q.q}</div><div class="opt-list">${q.opts.map(([l], i) => `<button class="opt ${sk.answers[q.id] === i ? 'on' : ''}" data-act="skin-ans" data-q="${q.id}" data-v="${i}">${l}</button>`).join('')}</div></div>`).join('')}
+    <div class="q-block"><div class="q">${sk.feelQ || D.SKIN_FEEL_Q.q}</div><div class="opt-list">${D.SKIN_FEEL_Q.opts.map(([k, l]) => `<button class="opt ${sk.feel === k ? 'on' : ''}" data-act="skin-feel" data-v="${k}">${l}</button>`).join('')}</div></div>
+    ${qs.map((q, n) => `<div class="q-block"><div class="q">${q.q}</div><div class="opt-list">${q.opts.map(([l], i) => `<button class="opt ${sk.answers[q.id] === i ? 'on' : ''}" data-act="skin-ans" data-q="${q.id}" data-v="${i}">${l}</button>`).join('')}</div></div>${n === 3 ? `<div class="card flat" style="background:rgba(255,126,182,.08);border:1px solid rgba(255,126,182,.25);margin-top:16px">${factHtml(factAt('peau', sk.factI || 0))}</div>` : ''}`).join('')}
     <button class="btn primary block" style="margin-top:22px;background:var(--skin);color:#1a0a12" data-act="skin-finish" ${done ? '' : 'disabled'}>Voir mon résultat ✨</button>
     ${done ? '' : '<p class="note center" style="margin-top:8px">Réponds à toutes les questions pour continuer.</p>'}`;
 }
@@ -994,12 +999,14 @@ function viewProfil() {
       <div class="grow"><h2>${esc(p.name)}</h2><p class="small muted" style="margin-top:3px">${p.age} ans · ${p.height} cm · ${currentWeight().toFixed(1).replace('.', ',')} kg · ${countryInfo().flag} ${countryInfo().label}</p><p class="small" style="margin-top:3px">${D.GOALS[p.goal].icon} ${D.GOALS[p.goal].label}</p></div></div>
     <div class="section">${accountCard()}</div>
     ${planCard() ? `<div class="section">${planCard()}</div>` : ''}
+    <div class="section">${levelChip()}</div>
     <div class="section grid3"><div class="card center" style="padding:12px"><div class="mid-num">${daysUsed}</div><div class="xs muted">jours suivis</div></div><div class="card center" style="padding:12px"><div class="mid-num">${Object.values(S.days).filter((d) => d.workout).length}</div><div class="xs muted">séances</div></div><div class="card center" style="padding:12px"><div class="mid-num">${streak()}</div><div class="xs muted">jours de suite</div></div></div>
     <div class="section card"><h3>Mes objectifs quotidiens</h3>
       ${[['🍽️', 'Calories', `${fmt(t.kcal)} kcal`], ['🥩', 'Protéines', `${t.prot} g`], ['💧', 'Eau', `${(t.waterBase / 1000).toFixed(1).replace('.', ',')} L (+0,5 L jour de sport)`], ['👟', 'Pas', fmt(t.steps)], ['😴', 'Sommeil', fmtDur(t.sleepMin).replace(' 00', '')], ['🏋️', 'Sport', `${p.days} séances / semaine`]].map(([i, l, v]) => `<div class="food-item"><span>${i}</span><div class="grow">${l}</div><b>${v}</b></div>`).join('')}
       ${calcDetails(t, p)}
       <button class="btn block" style="margin-top:12px" data-act="edit-profile">Modifier mon profil</button></div>
     <div class="section">${remindersCard()}</div>
+    <div class="section card tap" data-act="go" data-to="infos"><div class="row"><span style="font-size:24px">💡</span><div class="grow"><h3>Le savais-tu ?</h3><p class="small muted" style="margin-top:3px">Pense-bêtes santé, peau, sommeil et sport</p></div><span class="dim">›</span></div></div>
     <div class="section card tap" data-act="go" data-to="bilan"><div class="row"><span style="font-size:24px">📊</span><div class="grow"><h3>Mes bilans de la semaine</h3><p class="small muted" style="margin-top:3px">Tes chiffres et tes objectifs, chaque dimanche</p></div><span class="dim">›</span></div></div>
     ${standalone ? '' : `<div class="section card"><h3>📲 Installer l'appli</h3><p class="small muted" style="margin-top:6px;line-height:1.5">${ios ? 'Sur iPhone : touche le bouton Partager de Safari, puis « Sur l\'écran d\'accueil ».' : 'Ajoute All In sur ton écran d\'accueil pour l\'ouvrir comme une vraie appli.'}</p>
       ${!ios ? `<button class="btn primary block" style="margin-top:12px" data-act="install">Installer</button>` : ''}</div>`}
@@ -1007,7 +1014,7 @@ function viewProfil() {
     <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">${cloud.user ? 'Tes données sont sur ce téléphone et sauvegardées dans ton compte. Les photos de peau restent uniquement sur ce téléphone.' : 'Tout est enregistré sur ce téléphone. Crée un compte pour les sauvegarder, ou exporte une copie avant de changer d\'appareil.'}</p>
       <div class="row" style="margin-top:12px"><button class="btn grow sm" data-act="export">⬇ Exporter</button><label class="btn grow sm" style="cursor:pointer">⬆ Importer<input type="file" accept="application/json,.json" data-on="import" hidden></label></div>
       <button class="btn danger block sm" style="margin-top:8px" data-act="reset">Effacer toutes mes données</button></div>
-    <p class="note center section">All In · version 2.7.1</p></div>`;
+    <p class="note center section">All In · version 2.8</p></div>`;
 }
 
 /* ============================================================
@@ -1570,7 +1577,7 @@ async function fetchProducts() {
   ui.productsLoading = true; rerender();
   try {
     const labels = {};
-    D.SKIN_ROUTINE_Q.forEach((q) => { const a = S.skin.answers?.[q.id]; if (q.opts[a]) labels[q.q] = q.opts[a][0]; });
+    D.SKIN_Q_POOL.forEach((q) => { const a = S.skin.answers?.[q.id]; if (q.opts[a]) labels[q.q] = q.opts[a][0]; });
     const out = await ai('products', {
       country: { label: countryInfo().label, currency: countryInfo().cur },
       skin: { type: D.SKIN_TYPES[r.type]?.label, preoccupations: r.concerns.map((c) => D.SKIN_ISSUES[c]?.label), sexe: S.profile.sex === 'f' ? 'femme' : 'homme', age: S.profile.age, routine_actuelle: labels, analyse_ia: r.ai && r.ai.quality !== 'bad' ? r.ai.summary : null },
@@ -1860,6 +1867,144 @@ Object.assign(A, {
 });
 Object.assign(INPUTS, {
   'rem-time': (el) => { const r = rem(); r[el.dataset.k] = el.value; S.settings = { ...(S.settings || {}), reminders: r }; save(); },
+});
+
+
+/* ============================================================
+   V4 — Le savais-tu, progression (niveaux, badges, évolution)
+   ============================================================ */
+const doy = () => Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 864e5);
+const factsOf = (cat) => (cat ? D.FACTS.filter((f) => f[0] === cat) : D.FACTS);
+function factAt(cat, i) { const l = factsOf(cat); return l[((i % l.length) + l.length) % l.length]; }
+const factHtml = ([c, ico, t], label = 'Le savais-tu ?') => `<div class="fact"><span class="fact-ico">${ico}</span><div><div class="xs upper muted">${label} · ${D.FACT_CATS[c]}</div><p style="margin-top:5px;line-height:1.5">${t}</p></div></div>`;
+
+function factCard() {
+  const i = doy() + (ui.factShift || 0);
+  return `<div class="card flat fact-card">${factHtml(factAt(null, i * 7))}
+    <div class="row between" style="margin-top:12px"><button class="btn sm ghost" data-act="go" data-to="infos">Tout voir</button><button class="btn sm" data-act="fact-next">Une autre ›</button></div></div>`;
+}
+
+function viewInfos() {
+  const cat = ui.factCat || null;
+  const list = factsOf(cat);
+  return `<div class="view">${header('Le savais-tu ?', { back: 'home' })}
+    <p class="small muted">${D.FACTS.length} pense-bêtes santé, peau, sommeil, sport et nutrition.</p>
+    <div class="chips" style="margin-top:12px"><button class="chip ${!cat ? 'on' : ''}" data-act="fact-cat" data-v="">Tout</button>${Object.entries(D.FACT_CATS).map(([k, l]) => `<button class="chip ${cat === k ? 'on' : ''}" data-act="fact-cat" data-v="${k}">${l}</button>`).join('')}</div>
+    <div class="col" style="margin-top:14px;gap:10px">${list.map((f) => `<div class="card flat" style="background:var(--card2)">${factHtml(f, '')}</div>`).join('')}</div></div>`;
+}
+
+/* ---------- Progression ---------- */
+function xpStats() {
+  let xp = 0;
+  const c = { wk: 0, water: 0, steps: 0, steps10k: 0, sleep: 0, sleep7: 0, meals: 0 };
+  Object.entries(S.days).forEach(([k, d]) => {
+    const t = targets(S.profile, k);
+    if (d.workout) { xp += 50; c.wk++; }
+    if (d.water >= t.water) { xp += 20; c.water++; }
+    if (d.steps >= t.steps) { xp += 20; c.steps++; }
+    if (d.steps >= 10000) c.steps10k++;
+    if (d.sleep) { xp += 10; c.sleep++; if (d.sleep.minutes >= 420) c.sleep7++; }
+    if (d.meals?.length) { xp += 10; c.meals++; }
+  });
+  const hist = skinHistory();
+  xp += S.weights.length * 5 + hist.length * 40;
+  c.weights = S.weights.length; c.scans = hist.length;
+  c.skinUp = hist.length >= 2 && hist[hist.length - 1].score > hist[0].score;
+  c.reviews = Object.keys(S.reviews || {}).length;
+  // Semaine complète : autant de séances que prévu, sur une semaine du lundi au dimanche
+  const weeks = {};
+  Object.entries(S.days).forEach(([k, d]) => { if (d.workout) { const m = mondayOf(k); weeks[m] = (weeks[m] || 0) + 1; } });
+  c.fullWeeks = Object.values(weeks).filter((n) => n >= Number(S.profile.days)).length;
+  c.streak = streak();
+  let li = 0;
+  D.LEVELS_XP.forEach(([min], i) => { if (xp >= min) li = i; });
+  const [min, name, icon] = D.LEVELS_XP[li];
+  const next = D.LEVELS_XP[li + 1];
+  return { xp, c, level: li + 1, name, icon, min, next: next ? next[0] : null, nextName: next ? next[1] : null };
+}
+
+const BADGES = [
+  ['first_wk', '🎯', 'Première séance', 'Termine ta première séance', (c) => c.wk >= 1],
+  ['wk10', '💪', '10 séances', 'Termine 10 séances', (c) => c.wk >= 10],
+  ['wk50', '🏆', '50 séances', 'Termine 50 séances', (c) => c.wk >= 50],
+  ['full_week', '📅', 'Semaine complète', 'Fais toutes tes séances d\'une semaine', (c) => c.fullWeeks >= 1],
+  ['full_4', '🗓️', 'Un mois sans faille', '4 semaines complètes', (c) => c.fullWeeks >= 4],
+  ['streak7', '🔥', '7 jours de suite', 'Garde ta série 7 jours', (c) => c.streak >= 7],
+  ['streak30', '🌋', '30 jours de suite', 'Garde ta série 30 jours', (c) => c.streak >= 30],
+  ['water7', '💧', 'Bien hydraté', 'Atteins ton objectif d\'eau 7 jours', (c) => c.water >= 7],
+  ['water30', '🌊', 'Source vive', 'Atteins ton objectif d\'eau 30 jours', (c) => c.water >= 30],
+  ['steps10k', '👟', '10 000 pas', 'Fais 10 000 pas en une journée', (c) => c.steps10k >= 1],
+  ['sleep7', '😴', 'Gros dormeur', '7 nuits de 7 h ou plus', (c) => c.sleep7 >= 7],
+  ['meals7', '🥗', 'Assiette suivie', 'Note tes repas 7 jours', (c) => c.meals >= 7],
+  ['weight4', '⚖️', 'Suivi du poids', 'Pèse-toi 4 fois', (c) => c.weights >= 4],
+  ['scan1', '✨', 'Premier scan', 'Fais ton premier scan de peau', (c) => c.scans >= 1],
+  ['scan3', '🔍', 'Peau suivie', 'Fais 3 scans de peau', (c) => c.scans >= 3],
+  ['skin_up', '🌟', 'Peau en progrès', 'Améliore ton score de skincare', (c) => c.skinUp],
+  ['review1', '📊', 'Premier bilan', 'Reçois ton premier bilan de la semaine', (c) => c.reviews >= 1],
+];
+
+function checkBadges() {
+  if (!S.profile) return;
+  const { c } = xpStats();
+  S.badges = S.badges || {};
+  const fresh = BADGES.filter(([id, , , , ok]) => ok(c) && !S.badges[id]);
+  if (!fresh.length) return;
+  fresh.forEach(([id]) => { S.badges[id] = today(); });
+  saveQuiet(); schedulePush();
+  const [, ico, name] = fresh[0];
+  setTimeout(() => toast(`${ico} Nouveau badge : ${name}${fresh.length > 1 ? ` (+${fresh.length - 1})` : ''}`), 600);
+}
+
+function levelChip() {
+  const s = xpStats();
+  const pct = s.next ? (s.xp - s.min) / (s.next - s.min) : 1;
+  return `<div class="level-chip tap" data-act="go" data-to="progres"><span class="lv-ico">${s.icon}</span><div class="grow"><div class="row between"><b class="small">Niveau ${s.level} · ${s.name}</b><span class="xs muted">${fmt(s.xp)} XP</span></div>${bar(pct, 'var(--accent)')}</div><span class="dim">›</span></div>`;
+}
+
+function skinHistory() {
+  const h = [...(S.skin.history || [])];
+  const r = S.skin.result;
+  if (r && !h.some((x) => x.date === r.date)) h.push({ date: r.date, score: r.score, n: r.concerns.length, type: r.type });
+  return h.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+function viewProgres() {
+  const s = xpStats();
+  const pct = s.next ? (s.xp - s.min) / (s.next - s.min) : 1;
+  const got = BADGES.filter(([id]) => S.badges?.[id]);
+  const hist = skinHistory();
+  // Séances par semaine, 8 dernières semaines
+  const mon = mondayOf();
+  const weeks = Array.from({ length: 8 }, (_, i) => addDays(mon, (i - 7) * 7));
+  const perWeek = weeks.map((m) => Array.from({ length: 7 }, (_, j) => peekDay(addDays(m, j))).filter((d) => d.workout).length);
+  const skinPts = hist.slice(-10).map((x) => ({ v: x.score, l: shortDate(x.date) }));
+  const firstS = hist[0], lastS = hist[hist.length - 1];
+  const w = S.weights.slice(-12).map((x) => ({ v: x.kg, l: shortDate(x.date) }));
+  return `<div class="view">${header('Ma progression', { back: 'home' })}
+    <div class="card level-hero center"><div style="font-size:48px">${s.icon}</div><div class="xs upper muted" style="margin-top:6px">Niveau ${s.level}</div><h1 style="margin-top:2px">${s.name}</h1>
+      <div style="margin-top:14px">${bar(pct, 'var(--accent)')}</div>
+      <p class="small muted" style="margin-top:8px">${fmt(s.xp)} XP${s.next ? ` · encore ${fmt(s.next - s.xp)} XP pour devenir <b>${s.nextName}</b>` : ' · niveau maximum atteint 👑'}</p></div>
+
+    <div class="section card"><h3>Gagne des XP</h3><div class="col" style="margin-top:10px;gap:0">${D.XP_RULES.map(([i, l, v]) => `<div class="food-item"><span>${i}</span><div class="grow small">${l}</div><b class="small" style="color:var(--accent)">+${v} XP</b></div>`).join('')}</div></div>
+
+    <div class="section"><div class="section-title"><h2>Badges</h2><span class="small muted">${got.length} / ${BADGES.length}</span></div>
+      <div class="badge-grid">${BADGES.map(([id, ico, name, how]) => { const on = S.badges?.[id]; return `<div class="badge ${on ? 'on' : ''}"><div class="b-ico">${on ? ico : '🔒'}</div><b class="xs">${name}</b><span class="xs muted">${on ? `le ${shortDate(on)}` : how}</span></div>`; }).join('')}</div></div>
+
+    <div class="section card"><h3>🏋️ Séances par semaine</h3><p class="xs muted" style="margin-top:3px">Les 8 dernières semaines · objectif ${S.profile.days} par semaine</p>
+      <div style="margin-top:12px">${barChart(perWeek, weeks.map((m) => String(parseKey(m).getDate())), { color: 'var(--accent)', target: Number(S.profile.days), fmtTop: (v) => v })}</div></div>
+
+    <div class="section card"><h3>✨ Ma peau</h3>
+      ${hist.length >= 2 ? `<p class="small muted" style="margin-top:4px">Score de skincare : <b style="color:var(--text)">${firstS.score} → ${lastS.score}</b>${lastS.score > firstS.score ? ' 📈' : ''} · problèmes repérés : ${firstS.n} → ${lastS.n}</p><div style="margin-top:12px">${lineChart(skinPts, { color: 'var(--skin)' })}</div>`
+        : hist.length === 1 ? `<p class="small muted" style="margin-top:6px;line-height:1.5">Premier scan : ${lastS.score}/100. Refais un scan dans 3 à 4 semaines pour voir ton évolution.</p><button class="btn sm block" style="margin-top:10px" data-act="go" data-to="peau">Aller au scan</button>`
+        : `<p class="small muted" style="margin-top:6px">Fais ton premier scan pour suivre l'évolution de ta peau.</p><button class="btn sm block" style="margin-top:10px" data-act="go" data-to="peau">Faire mon scan</button>`}</div>
+
+    ${w.length >= 2 ? `<div class="section card"><h3>⚖️ Mon poids</h3><p class="small muted" style="margin-top:4px">${String(w[0].v).replace('.', ',')} kg → <b style="color:var(--text)">${String(w[w.length - 1].v).replace('.', ',')} kg</b></p><div style="margin-top:12px">${lineChart(w)}</div></div>` : ''}
+  </div>`;
+}
+
+Object.assign(A, {
+  'fact-next': () => { ui.factShift = (ui.factShift || 0) + 1; rerender(); },
+  'fact-cat': (el) => { ui.factCat = el.dataset.v || null; rerender(); },
 });
 
 /* ---------- Détail des calculs (transparence) ---------- */

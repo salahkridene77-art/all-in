@@ -108,7 +108,7 @@ const storeSync = (s) => { try { localStorage.setItem(syncKey(), JSON.stringify(
 function mainPayload() {
   const { photos, ...skin } = S.skin || {};
   return { profile: S.profile, weights: S.weights, skin, settings: S.settings || {}, coach: (S.coach || []).slice(-40), brief: S.brief || null,
-    progress: S.progress || {}, feedback: (S.feedback || []).slice(-120), reviews: S.reviews || {}, premium: S.premium || {}, usage: S.usage || {} };
+    progress: S.progress || {}, feedback: (S.feedback || []).slice(-120), reviews: S.reviews || {}, premium: S.premium || {}, usage: S.usage || {}, badges: S.badges || {} };
 }
 const dayStr = (d) => { const { u, ...rest } = d; return JSON.stringify(rest); };
 const isEmptyDay = (d) => !d || (!d.water && !d.steps && !(d.meals || []).length && !d.sleep && !d.workout);
@@ -147,7 +147,7 @@ export async function pullAndMerge() {
         S.settings = r.settings || S.settings || {};
         S.coach = r.coach || S.coach || [];
         if (r.brief) S.brief = r.brief;
-        ['progress', 'feedback', 'reviews', 'premium', 'usage'].forEach((k) => { if (r[k]) S[k] = r[k]; });
+        ['progress', 'feedback', 'reviews', 'premium', 'usage', 'badges'].forEach((k) => { if (r[k]) S[k] = r[k]; });
         sync.main = JSON.stringify(mainPayload());
         sync.mainAt = r.mainAt || 0;
       }

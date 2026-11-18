@@ -443,7 +443,7 @@ export const SKIN_FEEL_Q = {
 export const V2_FEATURES = [
   ['⌚', 'Apple Santé / Google Fit', 'Pas et sommeil synchronisés automatiquement'],
   ['🔔', 'Rappels', 'Notifications pour boire, dormir et t\'entraîner'],
-  ['🏆', 'Défis entre amis', 'Classements, badges et défis à plusieurs'],
+  ['🤝', 'Défis entre amis', 'Classements et défis à plusieurs'],
   ['🌙', 'Mode Ramadan', 'Repas, hydratation et séances adaptés au jeûne'],
 ];
 
@@ -472,4 +472,120 @@ export const PREMIUM_FEATURES = [
   ['📸', 'Photos de repas illimitées', 'Les calories se remplissent toutes seules'],
   ['📊', 'Bilan du dimanche par le coach', 'Ce qui a marché, ce qui coince, tes 3 objectifs de la semaine'],
   ['📈', 'Programme qui évolue avec toi', 'Charges, répétitions et semaines légères ajustées à tes retours'],
+];
+
+/* ============================================================
+   V4 — Questions du scan (banque qui varie), Le savais-tu, progression
+   ============================================================ */
+// opts : [libellé, points, conseil spécifique facultatif]. Le score final est ramené sur 100.
+// core : posées à chaque scan. Les autres tournent (5 par scan, en priorité celles pas posées la dernière fois).
+export const SKIN_Q_POOL = [
+  { id: 'clean_pm', core: true, q: 'Tu nettoies ton visage le soir ?', opts: [['Tous les soirs', 15], ['Parfois', 6], ['Rarement', 0]], good: 'Nettoyage du soir régulier', fix: 'Nettoie ton visage chaque soir : sébum, pollution et crème solaire bouchent les pores pendant la nuit.' },
+  { id: 'moist', core: true, q: 'Tu mets une crème hydratante ?', opts: [['Tous les jours', 15], ['Parfois', 6], ['Jamais', 0]], good: 'Hydratation quotidienne', fix: 'Hydrate ta peau matin et soir, même si elle est grasse.' },
+  { id: 'spf', core: true, q: 'Tu mets une protection solaire (SPF) ?', opts: [['Tous les jours', 20], ['Seulement l\'été ou au soleil', 8], ['Jamais', 0]], good: 'Protection solaire tous les jours', fix: 'Mets un SPF tous les jours, même quand il fait gris : c\'est le meilleur anti-taches et anti-âge.' },
+  { id: 'exfo', q: 'Tu fais un gommage ou un exfoliant ?', opts: [['1 à 2 fois par semaine', 10], ['Jamais', 4, 'Une exfoliation douce 1 à 2 fois par semaine aide à désincruster les pores et à raviver l\'éclat.'], ['Tous les jours', 0, 'Exfolier tous les jours abîme la barrière de la peau : limite-toi à 1 ou 2 fois par semaine.']], good: 'Exfoliation à la bonne fréquence' },
+  { id: 'adapted', q: 'Tes produits sont adaptés à ton type de peau ?', opts: [['Oui, je les ai choisis pour ça', 10], ['Je ne sais pas', 4], ['Non, j\'utilise un savon classique', 0]], good: 'Produits adaptés à ta peau', fix: 'Le savon classique décape la peau : passe à un nettoyant doux adapté à ton type de peau.' },
+  { id: 'touch', q: 'Tu touches ou perces tes boutons ?', opts: [['Jamais', 10], ['Parfois', 4], ['Souvent', 0]], good: 'Tu ne touches pas tes boutons', fix: 'Toucher et percer les boutons propage les bactéries et laisse des marques brunes.' },
+  { id: 'pillow', q: 'Tu changes ta taie d\'oreiller…', opts: [['Chaque semaine', 10], ['Toutes les 2 semaines', 5], ['Moins souvent', 0]], good: 'Taie d\'oreiller changée souvent', fix: 'Change ta taie d\'oreiller chaque semaine : elle accumule sébum et bactéries.' },
+  { id: 'sleep', q: 'Tu dors combien d\'heures en moyenne ?', opts: [['7 h ou plus', 10], ['6 h environ', 5], ['Moins de 6 h', 0]], good: 'Bon sommeil', fix: 'Dors 7 h ou plus : la peau se répare surtout la nuit, et les cernes diminuent.' },
+  { id: 'water', q: 'Tu bois combien d\'eau par jour ?', opts: [['1,5 L ou plus', 10], ['Autour de 1 L', 5], ['Moins d\'1 L', 0]], good: 'Bonne hydratation', fix: 'Bois régulièrement dans la journée : une peau déshydratée tiraille et marque plus les ridules.' },
+  { id: 'makeup', q: 'Le soir, tu te démaquilles ?', opts: [['Je ne me maquille pas', 10], ['Toujours avant de dormir', 10], ['Parfois je dors maquillé(e)', 0]], good: 'Peau démaquillée chaque soir', fix: 'Ne dors jamais maquillé(e) : le maquillage mélangé au sébum bouche les pores toute la nuit.' },
+  { id: 'phone', q: 'Tu nettoies l\'écran de ton téléphone ?', opts: [['Chaque semaine', 10], ['De temps en temps', 5], ['Jamais', 0]], good: 'Téléphone propre', fix: 'Nettoie ton écran chaque semaine : il touche ta joue à chaque appel et transporte beaucoup de bactéries.' },
+  { id: 'towel', q: 'Pour sécher ton visage, tu utilises…', opts: [['Une serviette propre réservée au visage', 10], ['La même serviette que pour le corps', 4], ['Je frotte fort avec n\'importe quelle serviette', 0]], good: 'Serviette visage dédiée', fix: 'Sèche ton visage en tapotant avec une serviette propre réservée au visage, changée souvent.' },
+  { id: 'hotwater', q: 'Tu te rinces le visage à l\'eau…', opts: [['Tiède', 10], ['Froide', 8], ['Très chaude', 0]], good: 'Rinçage à l\'eau tiède', fix: 'Évite l\'eau très chaude sur le visage : elle dessèche et accentue les rougeurs. Préfère l\'eau tiède.' },
+  { id: 'sport_rinse', q: 'Après le sport, tu rinces ton visage ?', opts: [['Oui, rapidement', 10], ['Parfois', 5], ['Non, j\'attends le soir', 0]], good: 'Visage rincé après le sport', fix: 'Rince ton visage juste après le sport : la sueur et le sébum mélangés favorisent les boutons.' },
+  { id: 'stress', q: 'En ce moment, ton niveau de stress est…', opts: [['Bas', 10], ['Moyen', 6], ['Élevé', 2]], good: 'Stress maîtrisé', fix: 'Le stress augmente le sébum et les poussées de boutons : marche, respiration lente et sommeil t\'aideront.' },
+  { id: 'sugar', q: 'Sucreries, sodas, fast-food… tu en manges ?', opts: [['Rarement', 10], ['Quelques fois par semaine', 5], ['Presque tous les jours', 0]], good: 'Alimentation peu sucrée', fix: 'Limite sodas, sucreries et produits très raffinés : chez beaucoup de personnes, ils aggravent les boutons.' },
+  { id: 'veggies', q: 'Fruits et légumes, tu en manges…', opts: [['À presque chaque repas', 10], ['Une fois par jour', 5], ['Rarement', 0]], good: 'Assez de fruits et légumes', fix: 'Ajoute des fruits et légumes colorés à chaque repas : leurs antioxydants protègent ta peau.' },
+  { id: 'smoke', q: 'Tu fumes ou tu vapotes ?', opts: [['Non', 10], ['Un peu', 3], ['Oui, chaque jour', 0]], good: 'Pas de tabac', fix: 'Le tabac réduit l\'oxygénation de la peau et accélère les rides : réduire, c\'est déjà gagner.' },
+  { id: 'spf_reapply', q: 'Quand tu restes longtemps dehors, tu remets de la crème solaire ?', opts: [['Oui, toutes les 2 heures', 10], ['Parfois', 5], ['Non, une fois le matin suffit', 0]], good: 'SPF renouvelé dehors', fix: 'Dehors au soleil, remets ta protection solaire toutes les 2 heures : elle s\'use avec la sueur et le temps.' },
+  { id: 'hands', q: 'Avant d\'appliquer tes soins, tu te laves les mains ?', opts: [['Toujours', 10], ['Parfois', 5], ['Jamais', 0]], good: 'Mains propres pour les soins', fix: 'Lave-toi les mains avant tes soins : sinon tu déposes des bactéries directement sur ta peau.' },
+  { id: 'patch', q: 'Quand tu testes un nouveau produit…', opts: [['Je l\'essaie d\'abord sur une petite zone', 10], ['Je l\'applique directement partout', 3], ['J\'en change très souvent', 0]], good: 'Nouveaux produits testés avant', fix: 'Teste chaque nouveau produit 2 ou 3 jours sur une petite zone, et n\'en change pas trop souvent.' },
+  { id: 'neck', q: 'Tes soins, tu les appliques aussi sur le cou ?', opts: [['Oui, toujours', 10], ['Parfois', 5], ['Jamais', 2]], good: 'Le cou n\'est pas oublié', fix: 'Prolonge crème et SPF jusqu\'au cou : sa peau est fine et marque vite.' },
+];
+export const SKIN_FEEL_VARIANTS = [
+  'En fin de journée, ta peau est plutôt…',
+  'Vers 17 h, quand tu te regardes dans le miroir, ta peau est…',
+  'Juste après la douche, sans rien mettre, ta peau…',
+  'Si tu passes un mouchoir sur ton visage en fin d\'après-midi, ta peau est…',
+];
+
+/* Le savais-tu ? — petits pense-bêtes santé et soin */
+export const FACTS = [
+  // Peau
+  ['peau', '☀️', 'Les UVA traversent les nuages et les vitres : ils font vieillir la peau même quand il fait gris.'],
+  ['peau', '🧴', 'Pour bien protéger le visage, il faut environ 2 doigts de crème solaire (la longueur de l\'index et du majeur).'],
+  ['peau', '💧', 'Une peau grasse peut aussi être déshydratée : la grasse produit trop de sébum, la déshydratée manque d\'eau.'],
+  ['peau', '🫧', 'Nettoyer son visage plus de 2 fois par jour peut rendre la peau encore plus grasse : elle compense.'],
+  ['peau', '🔁', 'La peau renouvelle sa surface en 4 à 6 semaines : laisse au moins 4 semaines à un produit avant de juger.'],
+  ['peau', '🍋', 'Le citron pur sur la peau est une fausse bonne idée : il irrite et peut provoquer des taches au soleil.'],
+  ['peau', '🌙', 'La nuit, la peau se répare davantage : c\'est le meilleur moment pour les soins actifs comme le rétinol.'],
+  ['peau', '👆', 'Un bouton percé met souvent plus longtemps à guérir et peut laisser une tache brune pendant des mois.'],
+  ['peau', '🧊', 'Un glaçon enveloppé dans un tissu, quelques secondes, peut dégonfler un bouton rouge et douloureux.'],
+  ['peau', '📱', 'Ton écran de téléphone touche ta joue à chaque appel : le nettoyer aide à limiter les boutons de ce côté.'],
+  ['peau', '🛏️', 'Une taie d\'oreiller garde sébum, cheveux et produits : la changer chaque semaine aide les peaux à boutons.'],
+  ['peau', '🧪', 'Niacinamide : elle aide à réguler le sébum, resserrer l\'aspect des pores et atténuer les marques.'],
+  ['peau', '🧪', 'Acide salicylique (BHA) : il pénètre dans le pore pour le désincruster, idéal contre les points noirs.'],
+  ['peau', '🧪', 'Acide hyaluronique : il retient l\'eau dans la peau. Applique-le sur peau encore un peu humide.'],
+  ['peau', '⚠️', 'Rétinol et acides exfoliants le même soir, c\'est souvent trop : alterne-les pour éviter les irritations.'],
+  ['peau', '🤰', 'Pendant la grossesse, on évite le rétinol : demande conseil à ton médecin ou ton pharmacien.'],
+  ['peau', '👀', 'La peau autour des yeux est environ 4 fois plus fine qu\'ailleurs : applique les soins en tapotant.'],
+  ['peau', '🧔', 'Après le rasage, un soin apaisant sans alcool limite le feu du rasoir et les poils incarnés.'],
+  ['peau', '💄', 'Dormir maquillé(e) bouche les pores : même fatigué(e), une eau micellaire vaut mieux que rien.'],
+  ['peau', '🌡️', 'L\'eau très chaude dessèche la peau et accentue les rougeurs : rince ton visage à l\'eau tiède.'],
+  ['peau', '🧼', 'Le savon de Marseille ou le gel douche sur le visage décapent : prends un nettoyant doux pour visage.'],
+  ['peau', '🕶️', 'Les mains et le cou vieillissent aussi : pense à y mettre ta crème et ta protection solaire.'],
+  // Eau
+  ['eau', '🧠', 'Perdre 1 à 2 % de son eau suffit à faire baisser la concentration et l\'énergie.'],
+  ['eau', '🍉', 'Environ 20 % de l\'eau de la journée vient des aliments : soupes, fruits, légumes, laitages.'],
+  ['eau', '🚽', 'Des urines jaune pâle sont un bon signe d\'hydratation. Foncées : il est temps de boire.'],
+  ['eau', '🍽️', 'On confond parfois soif et faim : un verre d\'eau avant de grignoter aide à faire la différence.'],
+  ['eau', '☕', 'Le thé et le café comptent aussi dans ton eau de la journée, s\'ils ne sont pas trop sucrés.'],
+  ['eau', '🏃', 'Pendant le sport, boire par petites gorgées régulières vaut mieux que beaucoup d\'un coup à la fin.'],
+  // Sommeil
+  ['sommeil', '📵', 'La lumière des écrans retarde l\'endormissement : coupe-les 30 à 60 min avant de dormir.'],
+  ['sommeil', '⏰', 'Se lever à la même heure chaque jour, même le week-end, est le meilleur réglage pour bien dormir.'],
+  ['sommeil', '☕', 'La caféine agit plusieurs heures : évite café, thé fort et sodas caféinés après 15 h.'],
+  ['sommeil', '🌡️', 'Une chambre fraîche (autour de 18-19 °C) aide à s\'endormir plus vite.'],
+  ['sommeil', '💪', 'C\'est pendant le sommeil profond que le corps libère le plus d\'hormone de croissance : tes muscles s\'y réparent.'],
+  ['sommeil', '🍕', 'Mal dormir augmente l\'appétit, surtout pour le sucré et le gras, le lendemain.'],
+  ['sommeil', '😴', 'Une sieste de 10 à 20 minutes recharge sans laisser la tête lourde.'],
+  // Sport
+  ['sport', '🔥', 'Les muscles se construisent pendant la récupération, pas pendant la séance : les jours de repos comptent.'],
+  ['sport', '🦵', 'Les cuisses et les fessiers sont les plus gros muscles du corps : les travailler fait dépenser plus d\'énergie.'],
+  ['sport', '🚶', '30 minutes de marche rapide par jour améliorent déjà le cœur, le moral et le sommeil.'],
+  ['sport', '🧘', 'S\'échauffer 5 minutes réduit le risque de blessure et rend les premières séries plus efficaces.'],
+  ['sport', '📈', 'Pour progresser, le corps a besoin d\'un peu plus de difficulté chaque semaine : c\'est la surcharge progressive.'],
+  ['sport', '🤕', 'Avoir des courbatures n\'est pas obligatoire pour progresser : elles diminuent quand le corps s\'habitue.'],
+  ['sport', '🏋️', 'Les femmes ne prennent pas un « gros volume » facilement avec la musculation : elles gagnent surtout en tonus et en force.'],
+  ['sport', '❤️', 'Bouger régulièrement réduit le stress : l\'effet sur le moral se ressent souvent dès la première séance.'],
+  ['sport', '🪑', 'Rester assis longtemps fatigue le dos : lève-toi et bouge 2 minutes toutes les heures.'],
+  // Nutrition
+  ['nutrition', '🥚', 'Les protéines rassasient plus que les glucides et les graisses : elles aident à moins grignoter.'],
+  ['nutrition', '🍽️', 'Manger lentement aide à mieux sentir la satiété : il faut environ 20 minutes pour que le cerveau la ressente.'],
+  ['nutrition', '🥗', 'Les fibres (légumes, légumineuses, céréales complètes) nourrissent les bonnes bactéries de l\'intestin.'],
+  ['nutrition', '🫒', 'Les bonnes graisses (huile d\'olive, noix, poissons gras) sont utiles pour la peau, le cœur et le cerveau.'],
+  ['nutrition', '🥤', 'Une canette de soda contient l\'équivalent d\'environ 7 morceaux de sucre.'],
+  ['nutrition', '🍌', 'Avant le sport, un fruit 30 à 60 minutes avant donne de l\'énergie sans peser sur l\'estomac.'],
+  ['nutrition', '🫘', 'Lentilles, pois chiches et haricots sont riches en protéines et en fibres, et peu chers.'],
+  ['nutrition', '🍞', 'Un régime trop strict finit souvent par craquer : mieux vaut un petit déficit tenu longtemps.'],
+  ['nutrition', '🥛', 'Un yaourt nature ou un fromage blanc après la séance apporte des protéines facilement.'],
+  // Santé / mental
+  ['santé', '🧠', 'Prendre 10 minutes de lumière naturelle le matin aide à régler l\'horloge du corps et le moral.'],
+  ['santé', '🌬️', 'Respirer lentement (inspirer 4 s, expirer 6 s) pendant 2 minutes calme le stress.'],
+  ['santé', '🪥', 'Se brosser les dents 2 minutes, 2 fois par jour : la santé de la bouche joue aussi sur celle du cœur.'],
+  ['santé', '👂', 'Un écouteur à fond plus d\'une heure fatigue l\'oreille : garde le volume sous 60 %.'],
+  ['santé', '🩺', 'Un bilan de santé de temps en temps permet de vérifier tension, sucre et cholestérol avant qu\'ils posent problème.'],
+  ['santé', '🤝', 'Voir ses proches et rire ensemble fait vraiment du bien au moral et réduit le stress.'],
+];
+export const FACT_CATS = { peau: 'Peau', eau: 'Hydratation', sommeil: 'Sommeil', sport: 'Sport', nutrition: 'Nutrition', 'santé': 'Santé' };
+
+/* Progression : niveaux et badges */
+export const LEVELS_XP = [
+  [0, 'Débutant', '🌱'], [300, 'Motivé', '🔥'], [800, 'Régulier', '💪'], [1600, 'Déterminé', '⚡'],
+  [2800, 'Athlète', '🏅'], [4500, 'Warrior', '🛡️'], [7000, 'Champion', '🏆'], [10000, 'Légende', '👑'],
+];
+export const XP_RULES = [
+  ['🏋️', 'Séance terminée', 50], ['💧', 'Objectif d\'eau atteint', 20], ['👟', 'Objectif de pas atteint', 20],
+  ['😴', 'Nuit notée', 10], ['🍽️', 'Journée de repas notée', 10], ['⚖️', 'Pesée', 5], ['✨', 'Scan de peau', 40],
 ];
