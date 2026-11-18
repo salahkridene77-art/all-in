@@ -656,7 +656,7 @@ async function startCamera() {
   if (!v || camStream) return;
   if (!navigator.mediaDevices?.getUserMedia) { ui.skin.camError = true; rerender(); return; }
   try {
-    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 } }, audio: false });
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1440 } }, audio: false });
     const v2 = document.getElementById('cam');
     if (!v2) return stopCamera();
     v2.srcObject = camStream;
@@ -688,7 +688,7 @@ function analyseLight(ctx, w, h) {
 }
 
 function drawToPhoto(src, sw, sh, mirror) {
-  const W = 360, H = 480;
+  const W = 720, H = 960; // assez de détails pour voir pores et texture
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const ctx = c.getContext('2d');
   const r = Math.max(W / sw, H / sh);
@@ -696,36 +696,70 @@ function drawToPhoto(src, sw, sh, mirror) {
   if (mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
   ctx.drawImage(src, (W - dw) / 2, (H - dh) / 2, dw, dh);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  return { data: c.toDataURL('image/jpeg', 0.72), light: analyseLight(ctx, W, H) };
+  return { data: c.toDataURL('image/jpeg', 0.85), light: analyseLight(ctx, W, H) };
 }
 
-function capturePhoto() {
+/* Scan guidé : de face, puis côté gauche et côté droit, avec compte à rebours */
+const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+async function runScanSequence() {
+  const sk = ui.skin;
+  if (sk.scanning) return;
   const v = document.getElementById('cam');
   if (!v || !v.videoWidth) { toast('Caméra pas encore prête'); return; }
-  const photo = drawToPhoto(v, v.videoWidth, v.videoHeight, true);
+  sk.scanning = true; sk.shots = [];
+  const hud = () => document.getElementById('scan-hud');
+  const box = document.querySelector('.cam-box');
+  box?.classList.add('scanning');
+  document.querySelectorAll('[data-act="scan-go"], .scan-alt').forEach((b) => { b.disabled = true; b.style.opacity = .4; });
+  for (let i = 0; i < D.SCAN_ANGLES.length; i++) {
+    const a = D.SCAN_ANGLES[i];
+    for (let n = a.wait; n > 0; n--) {
+      if (route().page !== 'peau' || ui.skin !== sk || !document.getElementById('cam')) { sk.scanning = false; return; }
+      const h = hud();
+      if (h) h.innerHTML = `<div class="scan-step">${i + 1} / ${D.SCAN_ANGLES.length} · ${a.label}</div><div class="scan-hint">${a.hint}</div><div class="scan-count">${n}</div>`;
+      document.querySelectorAll('.scan-dots i').forEach((d, j) => { d.className = j < i ? 'done' : j === i ? 'cur' : ''; });
+      beep(620, 0.05);
+      await sleep(1000);
+    }
+    const vid = document.getElementById('cam');
+    if (!vid?.videoWidth) { sk.scanning = false; return; }
+    sk.shots.push(drawToPhoto(vid, vid.videoWidth, vid.videoHeight, true));
+    beep(990, 0.08);
+    box?.classList.add('flash'); await sleep(180); box?.classList.remove('flash');
+  }
+  sk.scanning = false;
   stopCamera();
-  handlePhotoTaken(photo);
+  handleShots();
 }
 
-function importPhoto(file) {
-  const r = new FileReader();
-  r.onload = () => {
-    const img = new Image();
-    img.onload = () => { stopCamera(); handlePhotoTaken(drawToPhoto(img, img.width, img.height, false)); };
-    img.src = r.result;
-  };
-  r.readAsDataURL(file);
+/* Photos importées (1 à 3) ou prises une par une avec l'appareil photo */
+function importPhotos(files) {
+  const list = [...files].slice(0, 3 - (ui.skin.shots?.length || 0));
+  Promise.all(list.map((file) => new Promise((ok) => {
+    const r = new FileReader();
+    r.onload = () => { const img = new Image(); img.onload = () => ok(drawToPhoto(img, img.width, img.height, false)); img.onerror = () => ok(null); img.src = r.result; };
+    r.readAsDataURL(file);
+  }))).then((shots) => {
+    stopCamera();
+    ui.skin.shots = [...(ui.skin.shots || []), ...shots.filter(Boolean)];
+    if (ui.skin.single && ui.skin.shots.length < 3) { rerender(); return; } // appareil photo : on propose l'angle suivant
+    handleShots();
+  });
 }
 
-/* Après la photo : on ne l'affiche plus. Si la lumière est mauvaise on prévient, sinon on enchaîne. */
-function handlePhotoTaken(photo) {
-  ui.skin.photo = photo;
-  if (photo.light.cls === 'warn') { ui.skin.lightWarn = true; rerender(); return; }
+/* Après le scan : les photos ne sont jamais affichées. Si la lumière est mauvaise on prévient, sinon on enchaîne. */
+function handleShots() {
+  const shots = ui.skin.shots || [];
+  if (!shots.length) return;
+  ui.skin.photo = shots[0];
+  if (shots[0].light.cls === 'warn') { ui.skin.lightWarn = true; rerender(); return; }
   proceedWithPhoto();
 }
 
 function proceedWithPhoto() {
   const data = ui.skin.photo?.data;
+  const images = (ui.skin.shots?.length ? ui.skin.shots : ui.skin.photo ? [ui.skin.photo] : []).map((x) => x.data);
+  ui.skin.shots = [];
   ui.skin.lightWarn = false;
   if (data && S.settings?.keepSkinPhotos) {
     S.skin.photos = S.skin.photos.filter((x) => x.date !== today());
@@ -738,17 +772,32 @@ function proceedWithPhoto() {
   if (!data) return manual('nophoto');
   if (!cloud.user) return manual('login');
   if (!requireQuota('scan', () => manual('quota'))) return;
-  withConsent(() => { consume('scan'); ui.skin.pending = data; startSkinAi(data); ui.skin.manual = false; ui.skin.step = 'questions'; rerender(); }, () => manual('consent'));
+  withConsent(() => { consume('scan'); ui.skin.pending = images; startSkinAi(images); ui.skin.manual = false; ui.skin.step = 'questions'; rerender(); }, () => manual('consent'));
 }
 
 /* L'analyse IA démarre tout de suite, pendant que la personne répond aux questions */
-function startSkinAi(data) {
+function startSkinAi(images) {
   ui.skin.aiStatus = 'running'; ui.skin.aiRes = null; ui.skin.aiError = '';
-  const run = ui.skin.aiPromise = ai('skin', { image: data, country: { label: countryInfo().label, currency: countryInfo().cur }, answers: { sexe: S.profile.sex === 'f' ? 'femme' : 'homme', age: S.profile.age } })
+  const imgs = Array.isArray(images) ? images : [images];
+  const run = ui.skin.aiPromise = ai('skin', { images: imgs, answers: { sexe: S.profile.sex === 'f' ? 'femme' : 'homme', age: S.profile.age } })
     .then((r) => { if (ui.skin.aiPromise !== run) return; ui.skin.aiRes = r; ui.skin.aiStatus = 'done'; })
     .catch((e) => { if (ui.skin.aiPromise !== run) return; ui.skin.aiStatus = 'error'; ui.skin.aiError = e.message; })
     .finally(() => { if (route().page === 'peau' && ui.skin.step === 'questions') rerender(); });
   return run;
+}
+
+/* Réponses du questionnaire, avec ce qui est déjà bien fait */
+function skinRoutineAnswers() {
+  const sk = ui.skin;
+  const out = skinQs(sk).map((q) => {
+    const opt = q.opts[sk.answers[q.id]];
+    if (!opt) return null;
+    const max = Math.max(...q.opts.map((o) => o[1]));
+    return { question: q.q, reponse: opt[0], statut: opt[1] === max ? 'déjà bien' : 'à améliorer' };
+  }).filter(Boolean);
+  const feel = D.SKIN_FEEL_Q.opts.find(([k]) => k === sk.feel);
+  if (feel) out.unshift({ question: 'Ressenti de la peau en fin de journée', reponse: feel[1], statut: 'info' });
+  return out;
 }
 
 /* Questions du scan : les essentielles + 5 tirées au sort (en priorité celles pas posées la dernière fois) */
@@ -766,6 +815,9 @@ const skinQs = (sk) => (sk.qs?.length ? sk.qs : Object.keys(sk.answers || {})).m
 function zonesFromAi(r) {
   const z = {};
   (r?.observations || []).forEach((o) => { if (D.SKIN_ZONES[o.zone] && D.SKIN_ISSUES[o.issue]) { z[o.zone] = [...new Set([...(z[o.zone] || []), o.issue])]; } });
+  // zones fines du scan détaillé → zones de la carte du visage
+  const map = { front: 'front', tempes: 'front', entre_sourcils: 'front', contour_yeux: 'yeux', nez: 'nez', ailes_nez: 'nez', joue_g: 'joue_g', joue_d: 'joue_d', tour_bouche: 'menton', menton: 'menton', machoire: 'menton' };
+  (r?.zones || []).forEach((x) => { const k = map[x.zone]; if (k && ['à surveiller', 'à traiter'].includes(x.etat)) (x.issues || []).forEach((i) => { if (D.SKIN_ISSUES[i]) z[k] = [...new Set([...(z[k] || []), i])]; }); });
   return z;
 }
 
@@ -835,9 +887,11 @@ function computeSkin(aiRes = null) {
     : has('rides') ? 'Rétinol en douceur, 2 à 3 soirs par semaine (pas pendant la grossesse)'
     : has('taches') ? 'Acide azélaïque ou niacinamide le soir'
     : has('terne') ? 'Exfoliant doux à l\'acide lactique, 1 à 2 soirs par semaine' : null;
+  const doneQ = (id) => { const q = D.SKIN_Q_POOL.find((x) => x.id === id); const o = q?.opts[sk.answers[id]]; return o && o[1] === Math.max(...q.opts.map((x) => x[1])); };
+  const tag = (txt, id) => (doneQ(id) ? `${txt} <span class="pill good" style="padding:2px 8px;font-size:10.5px">déjà fait</span>` : txt);
   const routine = {
-    matin: [T.cleanser, serumAM, has('cernes') ? 'Contour des yeux à la caféine' : null, T.moisturizer, `Protection solaire : ${T.spf}`].filter(Boolean),
-    soir: ['Démaquillage ou eau micellaire si tu portes du maquillage ou du SPF', T.cleanser, treatPM, T.moisturizer + (type === 'seche' ? ' (couche plus généreuse le soir)' : '')].filter(Boolean),
+    matin: [T.cleanser, serumAM, has('cernes') ? 'Contour des yeux à la caféine' : null, tag(T.moisturizer, 'moist'), tag(`Protection solaire : ${T.spf}`, 'spf')].filter(Boolean),
+    soir: ['Démaquillage ou eau micellaire si tu portes du maquillage ou du SPF', tag(T.cleanser, 'clean_pm'), treatPM, T.moisturizer + (type === 'seche' ? ' (couche plus généreuse le soir)' : '')].filter(Boolean),
     semaine: [['grasse', 'mixte'].includes(type) || has('points') ? 'Masque à l\'argile sur la zone T, 1 fois par semaine' : null, type === 'seche' || has('secheresse') ? 'Masque hydratant, 1 à 2 fois par semaine' : null, type === 'sensible' ? 'Pas de gommage à grains : uniquement des soins très doux' : null].filter(Boolean),
   };
   const use = new Set(), avoid = new Set(), why = [];
@@ -861,7 +915,17 @@ async function finishSkin() {
   if (ui.skin.aiStatus === 'error') toast('Résultat basé sur tes réponses (analyse photo indisponible)');
   if (aiRes && aiRes.quality !== 'bad') ui.skin.zones = zonesFromAi(aiRes);
   const res = computeSkin(aiRes);
-  if (aiRes) res.reco = { privilegier: aiRes.privilegier || [], eviter: aiRes.eviter || [], products: aiRes.products || [] };
+  if (aiRes && aiRes.zones && aiRes.quality !== 'bad') {
+    // 2e étape : plan personnalisé qui tient compte de ce que la personne fait déjà
+    ui.skin.step = 'analyzing'; ui.skin.planStage = true; if (route().page === 'peau') rerender();
+    try {
+      const plan = await ai('skinplan', { analysis: { type: aiRes.skinType, resume: aiRes.summary, indicateurs: aiRes.indicateurs, zones: (aiRes.zones || []).filter((z) => z.etat !== 'non visible').map((z) => ({ zone: D.SKIN_DZONES[z.zone] || z.zone, etat: z.etat, constat: z.constat })) },
+        routine: skinRoutineAnswers(), person: { sexe: S.profile.sex === 'f' ? 'femme' : 'homme', age: S.profile.age, objectif: D.GOALS[S.profile.goal]?.label }, country: { label: countryInfo().label, currency: countryInfo().cur } });
+      res.plan = { deja_bien: plan.deja_bien || [], nouveautes: plan.nouveautes || [], routine: plan.routine };
+      res.reco = { privilegier: plan.privilegier || [], eviter: plan.eviter || [], products: plan.products || [] };
+    } catch (e) { toast('Plan personnalisé indisponible, conseils de base affichés'); }
+    ui.skin.planStage = false;
+  } else if (aiRes) res.reco = { privilegier: aiRes.privilegier || [], eviter: aiRes.eviter || [], products: aiRes.products || [] };
   S.skin.zones = ui.skin.zones; S.skin.feel = ui.skin.feel; S.skin.answers = ui.skin.answers; S.skin.qs = ui.skin.qs; S.skin.result = res;
   S.skin.history = [...(S.skin.history || []).filter((x) => x.date !== res.date), { date: res.date, score: res.score, n: res.concerns.length, type: res.type }].slice(-24);
   save();
@@ -882,7 +946,11 @@ function viewPeau() {
   else if (sk.step === 'zones') body = skinZones();
   else if (sk.step === 'questions') body = skinQuestions();
   else if (sk.step === 'result') body = skinResult(S.skin.result);
-  else if (sk.step === 'analyzing') body = `<div class="card center" style="padding:40px 20px"><div class="spin"></div><h3 style="margin-top:16px">L'IA termine l'analyse…</h3><p class="small muted" style="margin-top:6px">Elle examine ta peau zone par zone et cherche des produits vendus en ${esc(countryInfo().label)}.</p></div>
+  else if (sk.step === 'analyzing') body = `<div class="card center" style="padding:36px 20px"><div class="spin"></div><h3 style="margin-top:16px">${sk.planStage ? 'Création de ton plan personnalisé…' : 'L\'IA inspecte ta peau zone par zone…'}</h3>
+    <div class="col" style="margin-top:14px;gap:6px;text-align:left;max-width:280px;margin-left:auto;margin-right:auto">
+      <div class="small">${sk.planStage ? '✅' : '⏳'} Analyse des 11 zones du visage</div>
+      <div class="small ${sk.planStage ? '' : 'muted'}">${sk.planStage ? '⏳' : '○'} Conseils nouveaux selon tes réponses</div>
+      <div class="small ${sk.planStage ? '' : 'muted'}">${sk.planStage ? '⏳' : '○'} Produits vendus en ${esc(countryInfo().label)}</div></div></div>
     <div class="card flat section" style="background:var(--card2)">${factHtml(factAt('peau', doy() + 3))}</div>`;
   else body = skinHome();
   const back = sk.step ? `<button class="back" data-act="skin-back" aria-label="Retour">←</button>` : '';
@@ -912,11 +980,25 @@ function skinPhoto() {
       <p class="small muted" style="margin-top:6px;line-height:1.5">Une bonne lumière, face à une fenêtre, permet à l'IA de bien voir ta peau.</p></div>
       <div class="row" style="margin-top:14px"><button class="btn primary grow" style="background:var(--skin);color:#1a0a12" data-act="skin-retake">↺ Reprendre</button><button class="btn grow" data-act="skin-continue">Continuer quand même</button></div>`;
   }
-  return `${inAppNote()}${sk.camError ? `<div class="card center" style="padding:28px 18px"><div style="font-size:40px">📷</div><h3 style="margin-top:8px">Caméra intégrée indisponible</h3><p class="small muted" style="margin-top:6px;line-height:1.5">Pas de souci : touche « Ouvrir l'appareil photo » ci-dessous, ou autorise la caméra dans les réglages de ton navigateur.</p></div>`
-    : `<div class="cam-box"><video id="cam" playsinline muted autoplay></video>${oval}<div class="cam-hint"><span>Visage dans l'ovale · face à la lumière · sans maquillage</span></div></div>`}
-    <div class="col" style="margin-top:14px">${sk.camError ? `<label class="btn primary block" style="cursor:pointer;background:var(--skin);color:#1a0a12">📸 Ouvrir l'appareil photo<input type="file" accept="image/*" capture="user" data-on="skin-file" hidden></label>` : `<button class="btn primary block" style="background:var(--skin);color:#1a0a12" data-act="skin-capture">📸 Prendre la photo</button>`}
-      <label class="btn block" style="cursor:pointer">🖼 Choisir une photo existante<input type="file" accept="image/*" data-on="skin-file" hidden></label>
-      <button class="btn ghost block sm" data-act="skin-nophoto">Continuer sans photo</button></div>
+  const shots = sk.shots || [];
+  const dots = `<div class="scan-dots">${D.SCAN_ANGLES.map((a, j) => `<i class="${j < shots.length ? 'done' : ''}"></i>`).join('')}</div>`;
+  const steps = `<div class="row" style="justify-content:space-between;margin-top:10px">${D.SCAN_ANGLES.map((a, j) => `<span class="xs ${j < shots.length ? '' : 'muted'}" style="font-weight:700">${j < shots.length ? '✓' : j + 1 + '.'} ${a.label}</span>`).join('')}</div>`;
+  // Sans caméra intégrée : une photo par angle avec l'appareil photo du téléphone
+  if (sk.camError || (sk.single && shots.length)) {
+    const next = D.SCAN_ANGLES[shots.length];
+    return `${inAppNote()}<div class="card" style="padding:22px 18px"><div class="center"><div style="font-size:40px">📷</div><h3 style="margin-top:8px">${shots.length ? `${shots.length} photo${shots.length > 1 ? 's' : ''} sur 3` : 'Scan avec l\'appareil photo'}</h3>
+      <p class="small muted" style="margin-top:6px;line-height:1.5">${next ? `Prends maintenant ta photo <b>${next.label.toLowerCase()}</b> : ${next.hint.replace(/[⬅➡]/g, '').trim().toLowerCase()}.` : ''} 3 angles = une analyse bien plus précise.</p></div>${steps}</div>
+      <div class="col" style="margin-top:14px">${next ? `<label class="btn primary block" style="cursor:pointer;background:var(--skin);color:#1a0a12">📸 Photo ${next.label.toLowerCase()}<input type="file" accept="image/*" capture="user" data-on="skin-file" hidden></label>` : ''}
+        ${shots.length ? `<button class="btn block" data-act="skin-analyse">Analyser avec ${shots.length} photo${shots.length > 1 ? 's' : ''}</button>` : `<label class="btn block" style="cursor:pointer">🖼 Choisir 1 à 3 photos existantes<input type="file" accept="image/*" multiple data-on="skin-file" hidden></label>`}
+        <button class="btn ghost block sm" data-act="skin-nophoto">Continuer sans photo</button></div>`;
+  }
+  return `${inAppNote()}<div class="cam-box"><video id="cam" playsinline muted autoplay></video>${oval}<div class="scan-line"></div>
+      <div id="scan-hud" class="scan-hud"><div class="scan-step">Scan du visage en 3 angles</div><div class="scan-hint">Face à la lumière · sans maquillage · cheveux dégagés</div></div></div>
+    ${dots}
+    <div class="col" style="margin-top:14px"><button class="btn primary block" style="background:var(--skin);color:#1a0a12" data-act="scan-go">🔬 Lancer le scan</button>
+      <label class="btn block scan-alt" style="cursor:pointer">🖼 Choisir 1 à 3 photos existantes<input type="file" accept="image/*" multiple data-on="skin-file" hidden></label>
+      <button class="btn ghost block sm scan-alt" data-act="skin-nophoto">Continuer sans photo</button></div>
+    <p class="note center" style="margin-top:8px">Le scan prend 3 photos : de face, puis en tournant la tête de chaque côté. Garde le téléphone à hauteur du visage.</p>
     <p class="note center" style="margin-top:10px">${S.settings?.keepSkinPhotos ? 'La photo est gardée sur ton téléphone (réglable dans Peau).' : 'La photo n\'est pas conservée : elle est effacée juste après l\'analyse.'}</p>`;
 }
 
@@ -955,30 +1037,34 @@ function skinQuestions() {
 function skinResult(r) {
   if (!r) return skinHome();
   const T = D.SKIN_TYPES[r.type];
-  const list = (arr) => arr.map((x, i) => `<div class="routine-step"><span class="n">${i + 1}</span><div class="grow small" style="line-height:1.45">${x}</div></div>`).join('');
+  const plan = r.plan;
+  const rt = plan?.routine || r.routine;
+  const list = (arr) => arr.map((x, i) => { const done = /tu le fais déjà/i.test(x); return `<div class="routine-step"><span class="n" ${done ? 'style="background:rgba(62,224,143,.16);color:var(--steps)"' : ''}>${done ? '✓' : i + 1}</span><div class="grow small" style="line-height:1.45">${plan ? esc(x).replace(/\s*\(tu le fais déjà ✓?\)/i, ' <span class="pill good" style="padding:2px 8px;font-size:10.5px">déjà fait</span>') : x}</div></div>`; }).join('');
   const d = peekDay(today()), t = targets();
   const sleeps = lastDays(7).map((k) => peekDay(k).sleep?.minutes).filter(Boolean);
   const avgSleep = sleeps.length ? sleeps.reduce((a, b) => a + b, 0) / sleeps.length : null;
   return `<div class="card"><div class="skin-score">${ring(r.score / 100, { size: 110, stroke: 11, color: 'var(--skin)', inner: `<div><div class="mid-num">${r.score}</div><div class="xs muted">/ 100</div></div>` })}
       <div class="grow"><div class="xs upper muted">Score de ta skincare</div><h2 style="margin-top:4px;font-size:18px">${r.verdict}</h2></div></div></div>
     ${skinAiCard(r)}
-    ${r.reco && (r.reco.privilegier || []).length ? ingredientsCard(r, true) : ''}
-    ${productsCard(r)}
+    ${plan ? `${plan.nouveautes.length ? `<div class="card section new-tips"><h3>✨ Tes nouveaux conseils</h3><p class="xs muted" style="margin-top:3px">Basés sur ce que l'IA voit sur ta peau et sur tes réponses</p><div class="col" style="margin-top:12px;gap:12px">${plan.nouveautes.map((x, i) => `<div class="routine-step" style="border:0;padding:0"><span class="n" style="background:rgba(255,126,182,.18);color:var(--skin)">${i + 1}</span><div class="grow"><b class="small">${esc(x.titre)}</b><p class="small muted" style="margin-top:3px;line-height:1.5">${esc(x.detail)}</p></div></div>`).join('')}</div></div>` : ''}
+      ${plan.deja_bien.length ? `<div class="card section"><h3>✅ Ce que tu fais déjà bien</h3><ul class="list-plain" style="margin-top:10px">${plan.deja_bien.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}`
+    : `${r.good.length ? `<div class="card section"><h3>✅ Ce que tu fais déjà bien</h3><ul class="list-plain" style="margin-top:10px">${r.good.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''}
+    ${r.improve.length ? `<div class="card section"><h3>🎯 À améliorer en priorité</h3><ul class="list-plain" style="margin-top:10px">${r.improve.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''}`}
     <div class="card section"><div class="xs upper muted">Ton type de peau</div><h2 style="margin-top:4px" class="color-skin">${T.label}</h2><p class="small muted" style="margin-top:6px;line-height:1.5">${T.desc}</p>
       ${r.concerns.length ? `<div class="row wrap" style="gap:6px;margin-top:12px">${r.concerns.map((c) => `<span class="pill">${D.SKIN_ISSUES[c]?.icon} ${D.SKIN_ISSUES[c]?.label}</span>`).join('')}</div>` : ''}</div>
-    ${r.good.length ? `<div class="card section"><h3>✅ Ce que tu fais déjà bien</h3><ul class="list-plain" style="margin-top:10px">${r.good.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''}
-    ${r.improve.length ? `<div class="card section"><h3>🎯 À améliorer en priorité</h3><ul class="list-plain" style="margin-top:10px">${r.improve.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''}
     <div class="section"><h2>Ta routine conseillée</h2>
-      <div class="card" style="margin-top:12px"><h3>☀️ Matin</h3>${list(r.routine.matin)}</div>
-      <div class="card" style="margin-top:10px"><h3>🌙 Soir</h3>${list(r.routine.soir)}</div>
-      ${r.routine.semaine.length ? `<div class="card" style="margin-top:10px"><h3>📅 Chaque semaine</h3>${list(r.routine.semaine)}</div>` : ''}
+      <div class="card" style="margin-top:12px"><h3>☀️ Matin</h3>${list(rt.matin || [])}</div>
+      <div class="card" style="margin-top:10px"><h3>🌙 Soir</h3>${list(rt.soir || [])}</div>
+      ${(rt.semaine || []).length ? `<div class="card" style="margin-top:10px"><h3>📅 Chaque semaine</h3>${list(rt.semaine)}</div>` : ''}
       <p class="note" style="margin-top:8px">Introduis un seul nouveau produit à la fois et teste-le d'abord derrière l'oreille pendant 48 h.</p></div>
+    ${r.reco && (r.reco.privilegier || []).length ? ingredientsCard(r, true) : ''}
+    ${productsCard(r)}
     ${ingredientsCard(r)}
-    ${r.why.length ? `<div class="card section"><h3>Pourquoi ces conseils</h3><div class="col" style="margin-top:10px">${r.why.map(([c, w]) => `<div><b class="small">${D.SKIN_ISSUES[c]?.icon} ${D.SKIN_ISSUES[c]?.label}</b><p class="small muted" style="margin-top:3px;line-height:1.5">${w}</p></div>`).join('')}</div></div>` : ''}
+    ${r.why.length && !plan ? `<div class="card section"><h3>Pourquoi ces conseils</h3><div class="col" style="margin-top:10px">${r.why.map(([c, w]) => `<div><b class="small">${D.SKIN_ISSUES[c]?.icon} ${D.SKIN_ISSUES[c]?.label}</b><p class="small muted" style="margin-top:3px;line-height:1.5">${w}</p></div>`).join('')}</div></div>` : ''}
     <div class="card section flat" style="background:var(--card2)"><h3>🔗 Ta peau et le reste</h3><ul class="list-plain" style="margin-top:10px">
       <li>Eau aujourd'hui : ${(d.water / 1000).toFixed(1).replace('.', ',')} L sur ${(t.water / 1000).toFixed(1).replace('.', ',')} L. Une peau déshydratée marque plus.</li>
       <li>${avgSleep ? `Sommeil moyen cette semaine : ${fmtDur(Math.round(avgSleep))}.` : 'Note ton sommeil dans Suivi pour voir le lien avec ta peau.'} La peau se répare la nuit.</li>
-      <li>Limite les sucres rapides et les produits laitiers en excès si tu as des boutons : chez certaines personnes, ils aggravent l'acné.</li></ul></div>
+      ${plan ? '' : '<li>Limite les sucres rapides et les produits laitiers en excès si tu as des boutons : chez certaines personnes, ils aggravent l\'acné.</li>'}</ul></div>
     <p class="note" style="margin-top:14px">Ces conseils sont cosmétiques et ne remplacent pas l'avis d'un dermatologue. Consulte si un bouton, une tache ou une rougeur change d'aspect, saigne, fait mal ou ne part pas.</p>
     <div class="row" style="margin-top:16px"><button class="btn grow" data-act="skin-home">Retour</button><button class="btn primary grow" style="background:var(--skin);color:#1a0a12" data-act="skin-start">Refaire le scan</button></div>`;
 }
@@ -1014,7 +1100,7 @@ function viewProfil() {
     <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">${cloud.user ? 'Tes données sont sur ce téléphone et sauvegardées dans ton compte. Les photos de peau restent uniquement sur ce téléphone.' : 'Tout est enregistré sur ce téléphone. Crée un compte pour les sauvegarder, ou exporte une copie avant de changer d\'appareil.'}</p>
       <div class="row" style="margin-top:12px"><button class="btn grow sm" data-act="export">⬇ Exporter</button><label class="btn grow sm" style="cursor:pointer">⬆ Importer<input type="file" accept="application/json,.json" data-on="import" hidden></label></div>
       <button class="btn danger block sm" style="margin-top:8px" data-act="reset">Effacer toutes mes données</button></div>
-    <p class="note center section">All In · version 2.8</p></div>`;
+    <p class="note center section">All In · version 2.9</p></div>`;
 }
 
 /* ============================================================
@@ -1134,8 +1220,10 @@ const A = {
     if (!on) S.skin.photos = [];
     save(); toast(on ? 'Les prochaines photos seront gardées' : 'Photos supprimées'); rerender();
   },
-  'skin-capture': () => capturePhoto(),
-  'skin-retake': () => { ui.skin.photo = null; ui.skin.lightWarn = false; ui.skin.camError = false; rerender(); },
+  'scan-go': () => runScanSequence(),
+  'skin-single': () => { ui.skin.single = true; },
+  'skin-analyse': () => handleShots(),
+  'skin-retake': () => { ui.skin.photo = null; ui.skin.shots = []; ui.skin.single = false; ui.skin.lightWarn = false; ui.skin.camError = false; rerender(); },
   'skin-next': (el) => { stopCamera(); ui.skin.step = el.dataset.to; if (el.dataset.to === 'zones') ui.skin.sel = 'front'; rerender(); },
   'skin-zone': (el) => { ui.skin.sel = el.dataset.z; rerender(); },
   'skin-issue': (el) => {
@@ -1171,7 +1259,7 @@ const INPUTS = {
     const q = document.getElementById('food-q'); q.focus(); q.setSelectionRange(pos, pos);
   },
   'cycle-time': (el) => { ui.cycleTime = el.value; const c = document.getElementById('cycles'); if (c) c.innerHTML = cyclesHtml(); },
-  'skin-file': (el) => { const f = el.files?.[0]; if (f) importPhoto(f); },
+  'skin-file': (el) => { if (el.files?.length) { if (el.hasAttribute('capture')) ui.skin.single = true; importPhotos(el.files); } },
   import: (el) => {
     const f = el.files?.[0]; if (!f) return;
     const r = new FileReader();
@@ -1351,6 +1439,7 @@ function skinAiCard(r) {
       ${cloud.user ? `<button class="btn block" style="margin-top:12px;background:var(--skin);color:#1a0a12" data-act="${lastPhoto ? 'skin-ai' : 'skin-start'}">${lastPhoto ? 'Analyser ma dernière photo' : 'Refaire le scan avec photo'}</button>` : `<button class="btn block" style="margin-top:12px" data-act="auth-open" data-mode="signup">Créer un compte</button>`}</div>`;
   }
   const a = r.ai;
+  if (a.zones) return skinScanCard(a);
   const lvl = { 'léger': 'good', 'modéré': 'warn', 'marqué': 'bad' };
   return `<div class="card section ai-card"><div class="row between"><h3>🤖 Ce que l'IA voit sur ta peau</h3>${a.quality !== 'good' ? `<span class="pill warn">Photo ${a.quality === 'bad' ? 'inexploitable' : 'moyenne'}</span>` : ''}</div>
     ${a.qualityNote ? `<p class="small" style="margin-top:8px;color:var(--food)">${esc(a.qualityNote)}</p>` : ''}
@@ -1360,6 +1449,27 @@ function skinAiCard(r) {
       ${(a.tips || []).length ? `<div class="divider"></div><div class="xs upper muted">Conseils de l'IA</div><ul class="list-plain" style="margin-top:8px">${a.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
       ${a.seeDoctor ? `<div class="card flat" style="background:rgba(255,93,93,.1);margin-top:12px"><p class="small" style="color:var(--danger)"><b>À montrer à un dermatologue :</b> ${esc(a.seeDoctorReason || 'une zone mérite l\'avis d\'un professionnel.')}</p></div>` : ''}` : `<button class="btn block" style="margin-top:12px;background:var(--skin);color:#1a0a12" data-act="skin-start">Refaire une photo</button>`}</div>`;
 }
+
+function skinScanCard(a) {
+  if (a.quality === 'bad') return `<div class="card section ai-card"><h3>🔬 Analyse de ta peau</h3><p class="small" style="margin-top:8px;color:var(--food)">${esc(a.qualityNote || 'Photos difficiles à analyser.')}</p><button class="btn block" style="margin-top:12px;background:var(--skin);color:#1a0a12" data-act="skin-start">Refaire le scan</button></div>`;
+  const col = (v) => (v >= 75 ? 'var(--steps)' : v >= 50 ? 'var(--food)' : 'var(--danger)');
+  const ind = (a.indicateurs || []).filter((x) => D.SKIN_INDIC[x.id]);
+  const order = Object.keys(D.SKIN_DZONES);
+  const zones = [...(a.zones || [])].filter((z) => z.etat !== 'non visible').sort((x, y) => order.indexOf(x.zone) - order.indexOf(y.zone));
+  const pill = { nette: 'good', 'à surveiller': 'warn', 'à traiter': 'bad' };
+  const open = ui.skinZonesOpen;
+  const shown = open ? zones : zones.filter((z) => z.etat !== 'nette').slice(0, 6);
+  const nets = zones.filter((z) => z.etat === 'nette').length;
+  return `<div class="card section ai-card"><div class="row between"><h3>🔬 Analyse détaillée de ta peau</h3>${a.quality === 'medium' ? '<span class="pill warn">Photos moyennes</span>' : ''}</div>
+    ${a.qualityNote && a.quality !== 'good' ? `<p class="xs" style="margin-top:6px;color:var(--food)">${esc(a.qualityNote)}</p>` : ''}
+    <p style="margin-top:10px;line-height:1.5">${esc(a.summary)}</p>
+    ${ind.length ? `<div class="indic-grid">${ind.map((x) => `<div class="indic"><div class="row between"><span class="xs">${D.SKIN_INDIC[x.id][0]} ${D.SKIN_INDIC[x.id][1]}</span><b class="xs" style="color:${col(x.score)}">${Math.max(0, Math.min(100, x.score))}</b></div>${bar(x.score / 100, col(x.score))}<p class="xs muted" style="margin-top:4px;line-height:1.35">${esc(x.note)}</p></div>`).join('')}</div>` : ''}
+    <div class="divider"></div><div class="row between"><div class="xs upper muted">Zone par zone</div><span class="xs muted">${zones.length} zones · ${nets} nette${nets > 1 ? 's' : ''}</span></div>
+    <div class="col" style="margin-top:10px;gap:10px">${shown.map((z) => `<div class="zone-row"><div class="row between"><b class="small">${D.SKIN_DZONES[z.zone] || z.zone}</b><span class="pill ${pill[z.etat] || ''}" style="padding:2px 9px;font-size:11px">${esc(z.etat)}</span></div><p class="small muted" style="margin-top:3px;line-height:1.45">${esc(z.constat)}</p></div>`).join('') || '<p class="small" style="color:var(--steps)">Aucune zone à problème : ta peau est nette 👌</p>'}</div>
+    ${zones.length > shown.length || open ? `<button class="btn sm ghost block" style="margin-top:10px" data-act="skin-zones-all">${open ? 'Voir moins' : `Voir les ${zones.length} zones`}</button>` : ''}
+    ${a.seeDoctor ? `<div class="card flat" style="background:rgba(255,93,93,.1);margin-top:12px"><p class="small" style="color:var(--danger)"><b>À montrer à un dermatologue :</b> ${esc(a.seeDoctorReason || 'une zone mérite l\'avis d\'un professionnel.')}</p></div>` : ''}</div>`;
+}
+Object.assign(A, { 'skin-zones-all': () => { ui.skinZonesOpen = !ui.skinZonesOpen; rerender(); } });
 
 /* ---------- Photo de repas ---------- */
 function compressImage(file, max = 768) {

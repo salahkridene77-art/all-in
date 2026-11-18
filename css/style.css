@@ -387,3 +387,23 @@ details.calc li { font-size: 13px; }
 .badge { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px 8px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; opacity: .55; }
 .badge.on { opacity: 1; border-color: rgba(212,255,58,.45); background: linear-gradient(180deg, rgba(212,255,58,.1), var(--card)); }
 .badge .b-ico { font-size: 28px; }
+
+/* ---------- V5 : scan multi-angles et analyse détaillée ---------- */
+.scan-line { position: absolute; left: 12%; right: 12%; height: 3px; top: 12%; background: linear-gradient(90deg, transparent, var(--skin), transparent); box-shadow: 0 0 18px var(--skin); opacity: 0; pointer-events: none; }
+.cam-box.scanning .scan-line { opacity: 1; animation: scanmove 1.6s ease-in-out infinite alternate; }
+@keyframes scanmove { from { top: 12%; } to { top: 80%; } }
+.cam-box.flash::after { content: ''; position: absolute; inset: 0; background: #fff; opacity: .7; }
+.scan-hud { position: absolute; left: 0; right: 0; bottom: 12px; text-align: center; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.scan-hud .scan-step { background: rgba(0,0,0,.6); padding: 5px 12px; border-radius: 99px; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--skin); }
+.scan-hud .scan-hint { background: rgba(0,0,0,.6); padding: 7px 12px; border-radius: 99px; font-size: 14px; font-weight: 700; }
+.scan-hud .scan-count { font-size: 54px; font-weight: 800; line-height: 1; text-shadow: 0 2px 14px rgba(0,0,0,.7); }
+.scan-dots { display: flex; gap: 6px; margin-top: 12px; }
+.scan-dots i { flex: 1; height: 5px; border-radius: 99px; background: var(--card2); }
+.scan-dots i.cur { background: rgba(255,126,182,.5); }
+.scan-dots i.done { background: var(--skin); }
+.indic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.indic { background: var(--card2); border-radius: 14px; padding: 10px; }
+.indic .bar { margin-top: 6px; }
+.zone-row { padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.zone-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.new-tips { border: 1px solid rgba(255,126,182,.35); background: linear-gradient(180deg, rgba(255,126,182,.08), var(--card)); }

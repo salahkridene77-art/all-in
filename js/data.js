@@ -589,3 +589,12 @@ export const XP_RULES = [
   ['🏋️', 'Séance terminée', 50], ['💧', 'Objectif d\'eau atteint', 20], ['👟', 'Objectif de pas atteint', 20],
   ['😴', 'Nuit notée', 10], ['🍽️', 'Journée de repas notée', 10], ['⚖️', 'Pesée', 5], ['✨', 'Scan de peau', 40],
 ];
+
+/* Scan détaillé : indicateurs et zones fines */
+export const SKIN_INDIC = { hydratation: ['💧', 'Hydratation'], sebum: ['✨', 'Équilibre du sébum'], pores: ['⚫', 'Pores'], texture: ['🧱', 'Texture'], eclat: ['🌟', 'Éclat'], uniformite: ['🎨', 'Uniformité du teint'], rougeurs: ['🌹', 'Rougeurs'], imperfections: ['🔴', 'Imperfections'] };
+export const SKIN_DZONES = { front: 'Front', tempes: 'Tempes', entre_sourcils: 'Entre les sourcils', contour_yeux: 'Contour des yeux', nez: 'Nez', ailes_nez: 'Ailes du nez', joue_g: 'Joue gauche', joue_d: 'Joue droite', tour_bouche: 'Tour de la bouche', menton: 'Menton', machoire: 'Mâchoire' };
+export const SCAN_ANGLES = [
+  { id: 'face', label: 'De face', hint: 'Regarde l\'objectif, visage dans l\'ovale', wait: 3 },
+  { id: 'gauche', label: 'Côté gauche', hint: '⬅ Tourne doucement la tête vers ta gauche', wait: 4 },
+  { id: 'droite', label: 'Côté droit', hint: 'Tourne doucement la tête vers ta droite ➡', wait: 4 },
+];

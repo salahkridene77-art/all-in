@@ -17,6 +17,8 @@ const DEFAULT_ORIGINS = ['https://salahkridene77-art.github.io', 'http://localho
 const usage = new Map(); // limite simple par instance
 
 const ZONES = ['front', 'nez', 'joue_g', 'joue_d', 'menton', 'yeux'];
+const DZONES = ['front', 'tempes', 'entre_sourcils', 'contour_yeux', 'nez', 'ailes_nez', 'joue_g', 'joue_d', 'tour_bouche', 'menton', 'machoire'];
+const INDIC = ['hydratation', 'sebum', 'pores', 'texture', 'eclat', 'uniformite', 'rougeurs', 'imperfections'];
 const ISSUES = ['brillance', 'boutons', 'points', 'rougeurs', 'secheresse', 'taches', 'rides', 'cernes', 'terne'];
 const TYPES = ['grasse', 'mixte', 'seche', 'normale', 'sensible'];
 
@@ -46,7 +48,37 @@ const WEEKLY_SYSTEM = `Tu es le coach d'All In. Rédige le bilan de la semaine �
 Tutoiement, en français, ton motivant.
 ${SAFETY}`;
 
-const SKIN_SYSTEM = `Tu es l'assistant skincare d'All In. Tu donnes des conseils COSMÉTIQUES, tu n'es pas dermatologue et tu ne poses aucun diagnostic médical.
+const SKIN_SYSTEM = `Tu es le module d'analyse de peau d'All In. Tu donnes une analyse COSMÉTIQUE, tu n'es pas dermatologue et tu ne poses aucun diagnostic médical.
+On t'envoie 1 à 3 photos du MÊME visage : de face, puis tête tournée d'un côté et de l'autre (indiqué avant chaque photo). Utilise tous les angles : les profils montrent les joues, les tempes, la mâchoire et la texture en lumière rasante.
+
+Méthode, comme un esthéticien minutieux :
+1. Inspecte le visage zone par zone, sans en sauter aucune : front, tempes, entre les sourcils, contour des yeux, nez, ailes du nez, joue gauche, joue droite, sillons et tour de la bouche, menton, mâchoire.
+2. Pour chaque zone, écris un constat PRÉCIS et CONCRET de ce que tu vois réellement : taille et visibilité des pores, points noirs (comédons ouverts) ou points blancs (fermés), boutons rouges ou à tête blanche et leur nombre approximatif, marques ou taches brunes laissées par d'anciens boutons, rougeurs diffuses ou petits vaisseaux, peau qui pèle ou zones rugueuses, brillance, ridules, cernes (bruns ou bleutés), poches, teint terne ou irrégulier. Indique où exactement (ex. « 3 ou 4 petits boutons rouges en bas de la joue, près de la mâchoire »).
+3. Si une zone est nette, dis-le simplement (etat « nette »). Si une zone n'est pas visible sur les photos, mets etat « non visible ».
+4. Note 8 indicateurs de 0 à 100 (100 = excellent, aucun souci) avec une courte phrase : hydratation, sebum (100 = sébum équilibré), pores (100 = pores fins), texture (100 = lisse), eclat, uniformite (du teint), rougeurs (100 = aucune rougeur), imperfections (100 = aucun bouton ni point noir).
+5. observations : reprends les problèmes principaux avec les zones simples (front, nez, joue_g, joue_d, menton, yeux) et leur intensité.
+6. summary : 2 phrases claires qui résument l'état de la peau, en français, tutoiement.
+
+Règles :
+- N'indique que ce qui est réellement visible. En cas de doute, ne le signale pas, mais sois attentif aux détails fins.
+- Ne commente jamais la beauté, les traits, l'âge, le poids, l'origine ou la couleur de peau.
+- joue_g = joue gauche de la personne telle qu'elle apparaît à gauche sur la photo de face.
+- Si les photos sont floues, trop sombres, sans visage ou très maquillées, mets quality à "bad" et explique pourquoi dans qualityNote.
+- seeDoctor = true seulement si tu vois une lésion inhabituelle (grain de beauté irrégulier, plaie, lésion qui saigne, éruption étendue ou très inflammatoire).
+- Ne donne PAS de conseils ni de produits ici : ils seront donnés à l'étape suivante.`;
+
+const PLAN_SYSTEM = `Tu es le conseiller skincare d'All In (conseils COSMÉTIQUES, pas médicaux). On te donne l'analyse détaillée de la peau d'une personne (faite à partir de ses photos), ses réponses sur sa routine et ses habitudes, son sexe, son âge et son pays.
+Ton rôle : un plan personnalisé qui APPORTE DU NOUVEAU.
+
+Règles essentielles :
+- Ne conseille JAMAIS une habitude que la personne fait déjà bien (statut « déjà bien »). Exemple : si elle nettoie son visage tous les soirs, ne lui dis pas de nettoyer son visage le soir.
+- Pour ce qu'elle fait déjà bien, va plus loin si c'est utile (ex. elle met un SPF tous les jours → quantité, renouvellement, texture adaptée à sa peau), sinon félicite-la simplement dans deja_bien.
+- deja_bien : 2 à 4 points courts sur ce qu'elle fait bien, formulés positivement.
+- nouveautes : 4 à 6 conseils NOUVEAUX et précis, chacun relié à un constat de l'analyse ou à une réponse « à améliorer » (titre court + detail de 1 à 2 phrases concrètes : quoi, comment, à quelle fréquence, et en quoi ça répond à ce qu'on voit sur sa peau). Évite les généralités.
+- routine : matin, soir et chaque semaine, étapes courtes et concrètes, adaptées à ce qu'on voit (ex. « Sérum niacinamide sur la zone T » plutôt que « sérum »). Dans la routine, les gestes qu'elle fait déjà restent, suivis de « (tu le fais déjà ✓) ».
+- Tutoiement, français simple, ton bienveillant.`;
+
+const SKIN_SYSTEM_V1 = `Tu es l'assistant skincare d'All In. Tu donnes des conseils COSMÉTIQUES, tu n'es pas dermatologue et tu ne poses aucun diagnostic médical.
 On t'envoie une photo de visage (selfie), le sexe et l'âge de la personne, et son pays.
 - Décris uniquement l'état visible de la peau : brillance, boutons, points noirs/pores, rougeurs, sécheresse, taches, ridules, cernes, teint terne.
 - Ne commente jamais la beauté, les traits, l'âge, le poids, l'origine ou la couleur de peau.
@@ -109,6 +141,30 @@ const SCHEMAS = {
     required: ['quality', 'skinType', 'observations', 'summary', 'tips', 'seeDoctor', 'privilegier', 'eviter', 'products'],
   }),
   products: S('OBJECT', { properties: { ...INGR, products: PRODUCT_LIST }, required: ['privilegier', 'eviter', 'products'] }),
+  scan: S('OBJECT', {
+    properties: {
+      quality: S('STRING', { enum: ['good', 'medium', 'bad'] }),
+      qualityNote: S('STRING'),
+      skinType: S('STRING', { enum: TYPES }),
+      summary: S('STRING'),
+      indicateurs: S('ARRAY', { items: S('OBJECT', { properties: { id: S('STRING', { enum: INDIC }), score: S('INTEGER'), note: S('STRING') }, required: ['id', 'score', 'note'] }) }),
+      zones: S('ARRAY', { items: S('OBJECT', { properties: { zone: S('STRING', { enum: DZONES }), etat: S('STRING', { enum: ['nette', 'à surveiller', 'à traiter', 'non visible'] }), constat: S('STRING'), issues: S('ARRAY', { items: S('STRING', { enum: ISSUES }) }) }, required: ['zone', 'etat', 'constat'] }) }),
+      observations: S('ARRAY', { items: S('OBJECT', { properties: { zone: S('STRING', { enum: ZONES }), issue: S('STRING', { enum: ISSUES }), level: S('STRING', { enum: ['léger', 'modéré', 'marqué'] }), note: S('STRING') }, required: ['zone', 'issue', 'level'] }) }),
+      seeDoctor: S('BOOLEAN'),
+      seeDoctorReason: S('STRING'),
+    },
+    required: ['quality', 'skinType', 'summary', 'indicateurs', 'zones', 'observations', 'seeDoctor'],
+  }),
+  skinplan: S('OBJECT', {
+    properties: {
+      deja_bien: S('ARRAY', { items: S('STRING') }),
+      nouveautes: S('ARRAY', { items: S('OBJECT', { properties: { titre: S('STRING'), detail: S('STRING') }, required: ['titre', 'detail'] }) }),
+      routine: S('OBJECT', { properties: { matin: S('ARRAY', { items: S('STRING') }), soir: S('ARRAY', { items: S('STRING') }), semaine: S('ARRAY', { items: S('STRING') }) }, required: ['matin', 'soir', 'semaine'] }),
+      ...INGR,
+      products: PRODUCT_LIST,
+    },
+    required: ['deja_bien', 'nouveautes', 'routine', 'privilegier', 'eviter', 'products'],
+  }),
   weekly: S('OBJECT', {
     properties: { titre: S('STRING'), resume: S('STRING'), points_forts: S('ARRAY', { items: S('STRING') }), a_ameliorer: S('ARRAY', { items: S('STRING') }), objectifs: S('ARRAY', { items: S('STRING') }) },
     required: ['titre', 'resume', 'points_forts', 'a_ameliorer', 'objectifs'],
@@ -230,11 +286,15 @@ async function diag(res, req) {
     const t0 = Date.now();
     try {
       const kind = req.query.selftest;
-      const r = kind === 'weekly'
+      const r = kind === 'scan'
+        ? await gemini({ system: SKIN_SYSTEM, schema: SCHEMAS.scan, contents: [{ role: 'user', parts: [{ text: 'Photo 1 : de face' }, img(tiny)] }] })
+        : kind === 'skinplan'
+        ? await gemini({ system: `${PLAN_SYSTEM}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.skinplan, contents: [{ role: 'user', parts: [{ text: 'Personne : {"sexe":"homme","age":30}\n\nAnalyse : {"type":"mixte","zones":[{"zone":"nez","constat":"pores dilatés et nombreux points noirs sur les ailes du nez"},{"zone":"joue_d","constat":"3 marques brunes laissées par d\'anciens boutons"}]}\n\nRéponses : [{"question":"Tu nettoies ton visage le soir ?","reponse":"Tous les soirs","statut":"déjà bien"},{"question":"Tu mets une protection solaire ?","reponse":"Jamais","statut":"à améliorer"}]' }] }] })
+        : kind === 'weekly'
         ? await gemini({ system: WEEKLY_SYSTEM, schema: SCHEMAS.weekly, contents: [{ role: 'user', parts: [{ text: 'Contexte : objectif masse musculaire, homme 30 ans, 3 séances prévues.\n\nBilan de la semaine : {"seances":"2/3","eau_moyenne_ml":1700,"sommeil_moyen_min":405,"pas_moyens":6200,"kcal_moyennes":2300,"poids_debut":82,"poids_fin":82.4,"retours_exercices":{"trop_dur":1,"parfait":6,"trop_facile":3}}' }] }] })
         : kind === 'products'
         ? await gemini({ system: `${PRODUCTS_SYSTEM}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.products, contents: [{ role: 'user', parts: [{ text: 'Profil de peau : {"type":"Peau mixte","preoccupations":["Points noirs / pores","Brillance"],"sexe":"homme","age":30}' }] }] })
-        : await gemini({ system: `${SKIN_SYSTEM}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.skin, contents: [{ role: 'user', parts: [{ text: 'Analyse cette photo.' }, img(tiny)] }] });
+        : await gemini({ system: `${SKIN_SYSTEM_V1}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.skin, contents: [{ role: 'user', parts: [{ text: 'Analyse cette photo.' }, img(tiny)] }] });
       return res.status(200).json({ ok: true, ms: Date.now() - t0, keys: Object.keys(r), sample: JSON.stringify(r).slice(0, 900) });
     } catch (e) { return res.status(200).json({ ok: false, ms: Date.now() - t0, err: e?.msg || String(e) }); }
   }
@@ -279,9 +339,17 @@ export default async function handler(req, res) {
       out = await gemini({ system: WEEKLY_SYSTEM, schema: SCHEMAS.weekly, contents: [{ role: 'user', parts: [{ text: `${ctxText(body.context)}\n\nBilan de la semaine : ${JSON.stringify(body.week || {}).slice(0, 4000)}` }] }] });
     } else if (body.task === 'brief') {
       out = await gemini({ system: BRIEF_SYSTEM, schema: SCHEMAS.brief, contents: [{ role: 'user', parts: [{ text: ctxText(body.context) }] }], temperature: 0.8 });
+    } else if (body.task === 'skin' && Array.isArray(body.images) && body.images.length) {
+      // Scan multi-angles : analyse zone par zone, sans conseils (ils viennent après le questionnaire)
+      const labels = ['Photo 1 : de face', 'Photo 2 : tête tournée d\'un côté', 'Photo 3 : tête tournée de l\'autre côté'];
+      const parts = [{ text: `Personne : ${JSON.stringify(body.answers || {}).slice(0, 300)}. Analyse minutieusement ces photos du même visage.` }];
+      body.images.slice(0, 3).forEach((im, i) => { parts.push({ text: labels[i] }); parts.push(img(im)); });
+      out = await gemini({ system: SKIN_SYSTEM, schema: SCHEMAS.scan, temperature: 0.2, contents: [{ role: 'user', parts }] });
+    } else if (body.task === 'skinplan') {
+      out = await gemini({ system: `${PLAN_SYSTEM}\n\n${PRODUCT_RULES(body.country)}`, schema: SCHEMAS.skinplan, contents: [{ role: 'user', parts: [{ text: `Personne : ${JSON.stringify(body.person || {}).slice(0, 300)}\n\nAnalyse de sa peau : ${JSON.stringify(body.analysis || {}).slice(0, 6000)}\n\nSes réponses (routine et habitudes) : ${JSON.stringify(body.routine || []).slice(0, 3000)}` }] }] });
     } else if (body.task === 'skin') {
       if (!body.image) return res.status(400).json({ error: 'Photo manquante' });
-      out = await gemini({ system: `${SKIN_SYSTEM}\n\n${PRODUCT_RULES(body.country)}`, schema: SCHEMAS.skin, temperature: 0.2, contents: [{ role: 'user', parts: [{ text: `Réponses au questionnaire : ${JSON.stringify(body.answers || {}).slice(0, 2000)}\nAnalyse cette photo.` }, img(body.image)] }] });
+      out = await gemini({ system: `${SKIN_SYSTEM_V1}\n\n${PRODUCT_RULES(body.country)}`, schema: SCHEMAS.skin, temperature: 0.2, contents: [{ role: 'user', parts: [{ text: `Réponses au questionnaire : ${JSON.stringify(body.answers || {}).slice(0, 2000)}\nAnalyse cette photo.` }, img(body.image)] }] });
     } else if (body.task === 'products') {
       const exclude = (body.exclude || []).slice(0, 12).join(', ');
       out = await gemini({ system: `${PRODUCTS_SYSTEM}\n\n${PRODUCT_RULES(body.country)}`, schema: SCHEMAS.products, temperature: 0.5, contents: [{ role: 'user', parts: [{ text: `Profil de peau : ${JSON.stringify(body.skin || {}).slice(0, 2500)}${exclude ? `\nPropose des produits différents de : ${exclude}.` : ''}` }] }] });
