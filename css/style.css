@@ -411,3 +411,8 @@ details.calc li { font-size: 13px; }
 .ing-row { display: flex; align-items: flex-start; gap: 8px; padding: 10px; border-radius: 14px; background: var(--card2); }
 .ing-sec { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .ing-sec:last-child { border-bottom: 0; }
+
+.sex-switch { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.seg { display: flex; background: var(--card2); border-radius: 99px; padding: 3px; border: 1px solid var(--line); }
+.seg button { height: 34px; padding: 0 12px; border-radius: 99px; font-size: 13px; font-weight: 700; color: var(--muted); background: none; border: 0; }
+.seg button.on { background: var(--skin); color: #1a0a12; }

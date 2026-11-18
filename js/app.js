@@ -779,7 +779,7 @@ function proceedWithPhoto() {
 function startSkinAi(images) {
   ui.skin.aiStatus = 'running'; ui.skin.aiRes = null; ui.skin.aiError = '';
   const imgs = Array.isArray(images) ? images : [images];
-  const run = ui.skin.aiPromise = ai('skin', { images: imgs, answers: { sexe: S.profile.sex === 'f' ? 'femme' : 'homme', age: S.profile.age } })
+  const run = ui.skin.aiPromise = ai('skin', { images: imgs, answers: { sexe: (ui.skin.sex || S.profile.sex) === 'f' ? 'femme' : 'homme', age: S.profile.age } })
     .then((r) => { if (ui.skin.aiPromise !== run) return; ui.skin.aiRes = r; ui.skin.aiStatus = 'done'; })
     .catch((e) => { if (ui.skin.aiPromise !== run) return; ui.skin.aiStatus = 'error'; ui.skin.aiError = e.message; })
     .finally(() => { if (route().page === 'peau' && ui.skin.step === 'questions') rerender(); });
@@ -801,15 +801,37 @@ function skinRoutineAnswers() {
 }
 
 /* Questions du scan : les essentielles + 5 tirées au sort (en priorité celles pas posées la dernière fois) */
-function pickSkinQuestions() {
+function pickSkinQuestions(sex) {
   const last = new Set(S.skin.qs || []);
-  const pool = D.SKIN_Q_POOL.filter((q) => !q.core);
+  const pool = D.SKIN_Q_POOL.filter((q) => !q.core && (!q.sex || q.sex === sex));
   const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map((x) => x[1]);
-  const pick = [...shuffle(pool.filter((q) => !last.has(q.id))), ...shuffle(pool.filter((q) => last.has(q.id)))].slice(0, 5);
+  // Toujours une question propre au sexe (rasage / barbe, ou maquillage), puis 4 autres
+  const own = shuffle(pool.filter((q) => q.sex === sex)).sort((a, b) => last.has(a.id) - last.has(b.id))[0];
+  const rest = pool.filter((q) => q !== own);
+  const pick = [...(own ? [own] : []), ...shuffle(rest.filter((q) => !last.has(q.id))), ...shuffle(rest.filter((q) => last.has(q.id)))].slice(0, 5);
   const qs = [...D.SKIN_Q_POOL.filter((q) => q.core), ...shuffle(pick)].map((q) => q.id);
   return { qs, feelQ: D.SKIN_FEEL_VARIANTS[Math.floor(Math.random() * D.SKIN_FEEL_VARIANTS.length)], factI: Math.floor(Math.random() * 100) };
 }
-const skinQs = (sk) => (sk.qs?.length ? sk.qs : Object.keys(sk.answers || {})).map((id) => D.SKIN_Q_POOL.find((q) => q.id === id)).filter(Boolean);
+const skinQs = (sk) => (sk.qs?.length ? sk.qs : Object.keys(sk.answers || {})).map((id) => D.SKIN_Q_POOL.find((q) => q.id === id)).filter((q) => q && (!q.sex || !sk.sex || q.sex === sk.sex));
+
+/* Homme / femme : les questions qui ne correspondent pas sont remplacées */
+function setSkinSex(sex) {
+  const sk = ui.skin;
+  if (sk.sex === sex) return;
+  sk.sex = sex;
+  const ok = (q) => !q.sex || q.sex === sex;
+  const used = new Set(sk.qs || []);
+  sk.qs = (sk.qs || []).map((id) => {
+    const q = D.SKIN_Q_POOL.find((x) => x.id === id);
+    if (!q || ok(q)) return id;
+    delete sk.answers[id];
+    const alt = D.SKIN_Q_POOL.find((x) => !x.core && x.sex === sex && !used.has(x.id)) || D.SKIN_Q_POOL.find((x) => !x.core && !x.sex && !used.has(x.id));
+    if (alt) used.add(alt.id);
+    return alt?.id;
+  }).filter(Boolean);
+  rerender();
+}
+const sexSwitch = (sk) => `<div class="sex-switch"><span class="xs muted">Ce scan est pour</span><div class="seg"><button class="${sk.sex === 'h' ? 'on' : ''}" data-act="skin-sex" data-v="h">👨 Un homme</button><button class="${sk.sex === 'f' ? 'on' : ''}" data-act="skin-sex" data-v="f">👩 Une femme</button></div></div>`;
 
 /* Les observations de l'IA remplissent la carte du visage */
 function zonesFromAi(r) {
@@ -831,7 +853,7 @@ function startSkin(force = false) {
       <button class="btn ghost block sm" style="margin-top:8px" data-act="skin-gate" data-mode="manual">Continuer sans l'IA</button>`);
     return;
   }
-  ui.skin = { step: 'photo', sel: null, photo: null, zones: {}, feel: null, answers: {}, ...pickSkinQuestions(), camError: false, manual: false, lightWarn: false, aiStatus: null, aiRes: null, aiPromise: null };
+  ui.skin = { step: 'photo', sel: null, photo: null, zones: {}, feel: null, answers: {}, ...pickSkinQuestions(S.profile.sex), sex: S.profile.sex, camError: false, manual: false, lightWarn: false, aiStatus: null, aiRes: null, aiPromise: null };
   rerender();
 }
 
@@ -890,8 +912,8 @@ function computeSkin(aiRes = null) {
   const doneQ = (id) => { const q = D.SKIN_Q_POOL.find((x) => x.id === id); const o = q?.opts[sk.answers[id]]; return o && o[1] === Math.max(...q.opts.map((x) => x[1])); };
   const tag = (txt, id) => (doneQ(id) ? `${txt} <span class="pill good" style="padding:2px 8px;font-size:10.5px">déjà fait</span>` : txt);
   const routine = {
-    matin: [T.cleanser, serumAM, has('cernes') ? 'Contour des yeux à la caféine' : null, tag(T.moisturizer, 'moist'), tag(`Protection solaire : ${T.spf}`, 'spf')].filter(Boolean),
-    soir: ['Démaquillage ou eau micellaire si tu portes du maquillage ou du SPF', tag(T.cleanser, 'clean_pm'), treatPM, T.moisturizer + (type === 'seche' ? ' (couche plus généreuse le soir)' : '')].filter(Boolean),
+    matin: [T.cleanser, (sk.sex || S.profile.sex) === 'h' && sk.answers.shave !== undefined && sk.answers.shave !== 3 ? 'Après le rasage : soin apaisant sans alcool' : null, serumAM, has('cernes') ? 'Contour des yeux à la caféine' : null, tag(T.moisturizer, 'moist'), tag(`Protection solaire : ${T.spf}`, 'spf')].filter(Boolean),
+    soir: [(sk.sex || S.profile.sex) === 'f' ? 'Démaquillage ou eau micellaire si tu portes du maquillage ou du SPF' : 'Si tu as mis de la crème solaire : eau micellaire avant le nettoyant', tag(T.cleanser, 'clean_pm'), treatPM, T.moisturizer + (type === 'seche' ? ' (couche plus généreuse le soir)' : '')].filter(Boolean),
     semaine: [['grasse', 'mixte'].includes(type) || has('points') ? 'Masque à l\'argile sur la zone T, 1 fois par semaine' : null, type === 'seche' || has('secheresse') ? 'Masque hydratant, 1 à 2 fois par semaine' : null, type === 'sensible' ? 'Pas de gommage à grains : uniquement des soins très doux' : null].filter(Boolean),
   };
   const use = new Set(), avoid = new Set(), why = [];
@@ -920,7 +942,7 @@ async function finishSkin() {
     ui.skin.step = 'analyzing'; ui.skin.planStage = true; if (route().page === 'peau') rerender();
     try {
       const plan = await ai('skinplan', { analysis: { type: aiRes.skinType, resume: aiRes.summary, indicateurs: aiRes.indicateurs, zones: (aiRes.zones || []).filter((z) => z.etat !== 'non visible').map((z) => ({ zone: D.SKIN_DZONES[z.zone] || z.zone, etat: z.etat, constat: z.constat })) },
-        routine: skinRoutineAnswers(), person: { sexe: S.profile.sex === 'f' ? 'femme' : 'homme', age: S.profile.age, objectif: D.GOALS[S.profile.goal]?.label }, country: { label: countryInfo().label, currency: countryInfo().cur } });
+        routine: skinRoutineAnswers(), person: { sexe: (ui.skin.sex || S.profile.sex) === 'f' ? 'femme' : 'homme', age: S.profile.age, objectif: D.GOALS[S.profile.goal]?.label }, country: { label: countryInfo().label, currency: countryInfo().cur } });
       res.plan = { deja_bien: plan.deja_bien || [], nouveautes: plan.nouveautes || [], routine: plan.routine };
       res.reco = { privilegier: plan.privilegier || [], eviter: plan.eviter || [], products: plan.products || [] };
     } catch (e) { toast('Plan personnalisé indisponible, conseils de base affichés'); }
@@ -986,13 +1008,13 @@ function skinPhoto() {
   // Sans caméra intégrée : une photo par angle avec l'appareil photo du téléphone
   if (sk.camError || (sk.single && shots.length)) {
     const next = D.SCAN_ANGLES[shots.length];
-    return `${inAppNote()}<div class="card" style="padding:22px 18px"><div class="center"><div style="font-size:40px">📷</div><h3 style="margin-top:8px">${shots.length ? `${shots.length} photo${shots.length > 1 ? 's' : ''} sur 3` : 'Scan avec l\'appareil photo'}</h3>
+    return `${inAppNote()}${sexSwitch(sk)}<div class="card" style="padding:22px 18px"><div class="center"><div style="font-size:40px">📷</div><h3 style="margin-top:8px">${shots.length ? `${shots.length} photo${shots.length > 1 ? 's' : ''} sur 3` : 'Scan avec l\'appareil photo'}</h3>
       <p class="small muted" style="margin-top:6px;line-height:1.5">${next ? `Prends maintenant ta photo <b>${next.label.toLowerCase()}</b> : ${next.hint.replace(/[⬅➡]/g, '').trim().toLowerCase()}.` : ''} 3 angles = une analyse bien plus précise.</p></div>${steps}</div>
       <div class="col" style="margin-top:14px">${next ? `<label class="btn primary block" style="cursor:pointer;background:var(--skin);color:#1a0a12">📸 Photo ${next.label.toLowerCase()}<input type="file" accept="image/*" capture="user" data-on="skin-file" hidden></label>` : ''}
         ${shots.length ? `<button class="btn block" data-act="skin-analyse">Analyser avec ${shots.length} photo${shots.length > 1 ? 's' : ''}</button>` : `<label class="btn block" style="cursor:pointer">🖼 Choisir 1 à 3 photos existantes<input type="file" accept="image/*" multiple data-on="skin-file" hidden></label>`}
         <button class="btn ghost block sm" data-act="skin-nophoto">Continuer sans photo</button></div>`;
   }
-  return `${inAppNote()}<div class="cam-box"><video id="cam" playsinline muted autoplay></video>${oval}<div class="scan-line"></div>
+  return `${inAppNote()}${sexSwitch(sk)}<div class="cam-box"><video id="cam" playsinline muted autoplay></video>${oval}<div class="scan-line"></div>
       <div id="scan-hud" class="scan-hud"><div class="scan-step">Scan du visage en 3 angles</div><div class="scan-hint">Face à la lumière · sans maquillage · cheveux dégagés</div></div></div>
     ${dots}
     <div class="col" style="margin-top:14px"><button class="btn primary block" style="background:var(--skin);color:#1a0a12" data-act="scan-go">🔬 Lancer le scan</button>
@@ -1027,7 +1049,7 @@ function skinQuestions() {
   const banner = st === 'running' ? `<div class="card flat ai-status"><div class="spin sm"></div><div><b class="small">L'IA analyse ta photo…</b><p class="xs muted" style="margin-top:2px">Réponds aux questions pendant ce temps.</p></div></div>`
     : st === 'done' ? `<div class="card flat ai-status"><span style="font-size:20px">✅</span><div><b class="small">Analyse de ta photo terminée</b><p class="xs muted" style="margin-top:2px">${(sk.aiRes?.observations || []).length} point${(sk.aiRes?.observations || []).length > 1 ? 's' : ''} repéré${(sk.aiRes?.observations || []).length > 1 ? 's' : ''} sur ta peau. Le détail est dans ton résultat.</p></div></div>`
     : st === 'error' ? `<div class="card flat ai-status" style="flex-wrap:wrap"><span style="font-size:20px">⚠️</span><div class="grow"><b class="small">L'analyse de ta photo n'a pas abouti</b><p class="xs muted" style="margin-top:2px">${esc(sk.aiError)}</p></div>${sk.pending ? `<button class="btn sm" style="width:100%;margin-top:6px;background:var(--skin);color:#1a0a12" data-act="skin-retry">↻ Relancer l'analyse</button>` : ''}</div>` : '';
-  return `${banner}<p class="muted small" style="margin-top:${banner ? 14 : 0}px">Réponds honnêtement : c'est ce qui permet de juger ta skincare actuelle.</p>
+  return `${banner}<div style="margin-top:${banner ? 14 : 0}px">${sexSwitch(sk)}</div><p class="muted small">Réponds honnêtement : c'est ce qui permet de juger ta skincare actuelle.</p>
     <div class="q-block"><div class="q">${sk.feelQ || D.SKIN_FEEL_Q.q}</div><div class="opt-list">${D.SKIN_FEEL_Q.opts.map(([k, l]) => `<button class="opt ${sk.feel === k ? 'on' : ''}" data-act="skin-feel" data-v="${k}">${l}</button>`).join('')}</div></div>
     ${qs.map((q, n) => `<div class="q-block"><div class="q">${q.q}</div><div class="opt-list">${q.opts.map(([l], i) => `<button class="opt ${sk.answers[q.id] === i ? 'on' : ''}" data-act="skin-ans" data-q="${q.id}" data-v="${i}">${l}</button>`).join('')}</div></div>${n === 3 ? `<div class="card flat" style="background:rgba(255,126,182,.08);border:1px solid rgba(255,126,182,.25);margin-top:16px">${factHtml(factAt('peau', sk.factI || 0))}</div>` : ''}`).join('')}
     <button class="btn primary block" style="margin-top:22px;background:var(--skin);color:#1a0a12" data-act="skin-finish" ${done ? '' : 'disabled'}>Voir mon résultat ✨</button>
@@ -1100,7 +1122,7 @@ function viewProfil() {
     <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">${cloud.user ? 'Tes données sont sur ce téléphone et sauvegardées dans ton compte. Les photos de peau restent uniquement sur ce téléphone.' : 'Tout est enregistré sur ce téléphone. Crée un compte pour les sauvegarder, ou exporte une copie avant de changer d\'appareil.'}</p>
       <div class="row" style="margin-top:12px"><button class="btn grow sm" data-act="export">⬇ Exporter</button><label class="btn grow sm" style="cursor:pointer">⬆ Importer<input type="file" accept="application/json,.json" data-on="import" hidden></label></div>
       <button class="btn danger block sm" style="margin-top:8px" data-act="reset">Effacer toutes mes données</button></div>
-    <p class="note center section">All In · version 2.9.1</p></div>`;
+    <p class="note center section">All In · version 2.9.2</p></div>`;
 }
 
 /* ============================================================
@@ -1496,7 +1518,7 @@ function skinScanCard(a) {
     ${zones.length > shown.length || open ? `<button class="btn sm ghost block" style="margin-top:10px" data-act="skin-zones-all">${open ? 'Voir moins' : `Voir les ${zones.length} zones`}</button>` : ''}
     ${a.seeDoctor ? `<div class="card flat" style="background:rgba(255,93,93,.1);margin-top:12px"><p class="small" style="color:var(--danger)"><b>À montrer à un dermatologue :</b> ${esc(a.seeDoctorReason || 'une zone mérite l\'avis d\'un professionnel.')}</p></div>` : ''}</div>`;
 }
-Object.assign(A, { 'skin-zones-all': () => { ui.skinZonesOpen = !ui.skinZonesOpen; rerender(); } });
+Object.assign(A, { 'skin-zones-all': () => { ui.skinZonesOpen = !ui.skinZonesOpen; rerender(); }, 'skin-sex': (el) => setSkinSex(el.dataset.v) });
 
 /* ---------- Photo de repas ---------- */
 function compressImage(file, max = 768) {
