@@ -101,7 +101,7 @@ function viewOnboarding() {
   if (ob.step === 0) {
     return `<div class="splash">
       <div><div class="xs upper muted" style="margin-bottom:14px">Sport · Nutrition · Sommeil · Skincare</div>
-        <div class="brand">ALL<br><span>IN.</span></div>
+        <img class="splash-logo" src="icons/logo.jpg" alt="All In">
         <p class="muted" style="margin-top:18px;font-size:17px;line-height:1.5;max-width:320px">Ton corps, ton rythme. Tout ce qu'il faut pour aller mieux, dans une seule appli.</p></div>
       <div><div class="feat"><div><span>🏋️</span>Programme</div><div><span>💧</span>Eau</div><div><span>😴</span>Sommeil</div><div><span>🥗</span>Calories</div><div><span>👟</span>Pas</div><div><span>✨</span>Skincare</div></div>
         <button class="btn primary block" data-act="ob-next">Commencer</button>
@@ -1122,7 +1122,7 @@ function viewProfil() {
     <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">${cloud.user ? 'Tes données sont sur ce téléphone et sauvegardées dans ton compte. Les photos de peau restent uniquement sur ce téléphone.' : 'Tout est enregistré sur ce téléphone. Crée un compte pour les sauvegarder, ou exporte une copie avant de changer d\'appareil.'}</p>
       <div class="row" style="margin-top:12px"><button class="btn grow sm" data-act="export">⬇ Exporter</button><label class="btn grow sm" style="cursor:pointer">⬆ Importer<input type="file" accept="application/json,.json" data-on="import" hidden></label></div>
       <button class="btn danger block sm" style="margin-top:8px" data-act="reset">Effacer toutes mes données</button></div>
-    <p class="note center section">All In · version 2.9.2</p></div>`;
+    <div class="center section"><img src="icons/emblem-256.jpg" alt="" style="width:64px;height:64px;border-radius:16px"><p class="note" style="margin-top:6px">All In · version 3.0</p></div></div>`;
 }
 
 /* ============================================================

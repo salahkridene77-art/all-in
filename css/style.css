@@ -416,3 +416,5 @@ details.calc li { font-size: 13px; }
 .seg { display: flex; background: var(--card2); border-radius: 99px; padding: 3px; border: 1px solid var(--line); }
 .seg button { height: 34px; padding: 0 12px; border-radius: 99px; font-size: 13px; font-weight: 700; color: var(--muted); background: none; border: 0; }
 .seg button.on { background: var(--skin); color: #1a0a12; }
+
+.splash-logo { display: block; width: min(70vw, 270px); margin: 0 auto; border-radius: 28px; -webkit-mask-image: radial-gradient(ellipse 80% 75% at 50% 48%, #000 70%, transparent 100%); mask-image: radial-gradient(ellipse 80% 75% at 50% 48%, #000 70%, transparent 100%); }

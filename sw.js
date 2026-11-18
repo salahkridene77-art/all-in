@@ -1,9 +1,9 @@
 /* All In — service worker : l'appli fonctionne même sans connexion */
-const CACHE = 'allin-v2.9.2';
+const CACHE = 'allin-v3.0.0';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/style.css',
   './js/app.js', './js/core.js', './js/data.js', './js/cloud.js', './js/config.js', './js/anim.js',
-  './icons/icon-192.png', './icons/icon-512.png', './icons/icon.svg',
+  './icons/icon-192.png', './icons/icon-512.png', './icons/favicon-32.png', './icons/logo.jpg', './icons/emblem-256.jpg',
 ];
 
 self.addEventListener('install', (e) => {
