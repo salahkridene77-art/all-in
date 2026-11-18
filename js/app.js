@@ -730,10 +730,11 @@ function proceedWithPhoto() {
     save();
   }
   ui.skin.photo = null; // la photo disparaît de l'écran et de la mémoire de l'appli
-  const manual = () => { ui.skin.manual = true; ui.skin.step = 'zones'; ui.skin.sel = 'front'; rerender(); };
-  if (!data || !cloud.user) return manual();
-  if (!requireQuota('scan', manual)) return;
-  withConsent(() => { consume('scan'); ui.skin.pending = data; startSkinAi(data); ui.skin.manual = false; ui.skin.step = 'questions'; rerender(); }, manual);
+  const manual = (why) => { ui.skin.manual = true; ui.skin.manualWhy = why; ui.skin.step = 'zones'; ui.skin.sel = 'front'; rerender(); };
+  if (!data) return manual('nophoto');
+  if (!cloud.user) return manual('login');
+  if (!requireQuota('scan', () => manual('quota'))) return;
+  withConsent(() => { consume('scan'); ui.skin.pending = data; startSkinAi(data); ui.skin.manual = false; ui.skin.step = 'questions'; rerender(); }, () => manual('consent'));
 }
 
 /* L'analyse IA démarre tout de suite, pendant que la personne répond aux questions */
@@ -753,7 +754,16 @@ function zonesFromAi(r) {
   return z;
 }
 
-function startSkin() {
+function startSkin(force = false) {
+  // Sans compte, l'IA ne peut pas analyser la photo : on le dit avant de commencer
+  if (cloud.enabled && !cloud.user && !force) {
+    openModal(`<div class="center"><div style="font-size:44px">✨</div><h2 style="margin-top:8px">Crée ton compte gratuit</h2>
+      <p class="small muted" style="margin-top:8px;line-height:1.55">Pour que l'<b>IA analyse ta peau</b> zone par zone et te conseille des produits vendus en ${esc(countryInfo().label)}, il faut un compte. C'est gratuit et ça prend 30 secondes.</p></div>
+      <button class="btn primary block" style="margin-top:18px;background:var(--skin);color:#1a0a12" data-act="skin-gate" data-mode="signup">Créer mon compte</button>
+      <button class="btn block" style="margin-top:8px" data-act="skin-gate" data-mode="login">J'ai déjà un compte</button>
+      <button class="btn ghost block sm" style="margin-top:8px" data-act="skin-gate" data-mode="manual">Continuer sans l'IA</button>`);
+    return;
+  }
   ui.skin = { step: 'photo', sel: null, photo: null, zones: {}, feel: S.skin.feel, answers: { ...S.skin.answers }, camError: false, manual: false, lightWarn: false, aiStatus: null, aiRes: null, aiPromise: null };
   rerender();
 }
@@ -910,7 +920,13 @@ function skinZones() {
   const sk = ui.skin, sel = sk.sel;
   const issues = sel === 'yeux' ? ['cernes', 'rides', 'secheresse', 'rougeurs'] : Object.keys(D.SKIN_ISSUES).filter((k) => k !== 'cernes');
   const cur = sk.zones[sel] || [];
-  return `<p class="muted small" style="margin-bottom:12px">${cloud.user ? 'Sans photo, l\'IA ne peut pas voir ta peau : indique' : 'Indique'} les zones où tu remarques quelque chose, puis choisis ce que tu vois.</p>
+  const why = sk.manualWhy;
+  const fix = why === 'login' && cloud.enabled ? `<button class="btn sm block" style="margin-top:10px;background:var(--skin);color:#1a0a12" data-act="skin-gate" data-mode="signup">Créer mon compte pour l'analyse IA</button>`
+    : why === 'quota' ? `<button class="btn sm block" style="margin-top:10px" data-act="go-premium">Voir Premium</button>`
+    : why === 'consent' || why === 'nophoto' ? `<button class="btn sm block" style="margin-top:10px" data-act="skin-start">Refaire le scan avec l'IA</button>` : '';
+  const msg = { login: 'L\'IA analyse ta photo seulement si tu as un compte (gratuit).', quota: 'Tu as utilisé ton scan IA gratuit de la semaine.', consent: 'Tu as choisi de ne pas envoyer ta photo à l\'IA.', nophoto: 'Sans photo, l\'IA ne peut pas voir ta peau.' }[why];
+  return `${msg ? `<div class="card flat" style="background:rgba(255,126,182,.1);border:1px solid rgba(255,126,182,.3);margin-bottom:12px"><p class="small" style="line-height:1.5">ℹ️ ${msg} Tu peux quand même indiquer toi-même ce que tu vois.</p>${fix}</div>` : ''}
+    <p class="muted small" style="margin-bottom:12px">Touche les zones où tu remarques quelque chose, puis choisis ce que tu vois.</p>
     ${faceMap()}
     <div class="card" style="margin-top:14px">${sel ? `<h3>${D.SKIN_ZONES[sel]}</h3><div class="issue-chips" style="margin-top:12px">${issues.map((k) => `<button class="chip ${cur.includes(k) ? 'on' : ''}" data-act="skin-issue" data-k="${k}">${D.SKIN_ISSUES[k].icon} ${D.SKIN_ISSUES[k].label}</button>`).join('')}</div>`
       : '<p class="small muted center">👆 Touche une zone du visage</p>'}</div>
@@ -991,7 +1007,7 @@ function viewProfil() {
     <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">${cloud.user ? 'Tes données sont sur ce téléphone et sauvegardées dans ton compte. Les photos de peau restent uniquement sur ce téléphone.' : 'Tout est enregistré sur ce téléphone. Crée un compte pour les sauvegarder, ou exporte une copie avant de changer d\'appareil.'}</p>
       <div class="row" style="margin-top:12px"><button class="btn grow sm" data-act="export">⬇ Exporter</button><label class="btn grow sm" style="cursor:pointer">⬆ Importer<input type="file" accept="application/json,.json" data-on="import" hidden></label></div>
       <button class="btn danger block sm" style="margin-top:8px" data-act="reset">Effacer toutes mes données</button></div>
-    <p class="note center section">All In · version 2.7</p></div>`;
+    <p class="note center section">All In · version 2.7.1</p></div>`;
 }
 
 /* ============================================================
@@ -1428,6 +1444,8 @@ async function doAuth(fn) {
     await fn();
     closeModal();
     toast('Connecté ✓ Synchronisation…');
+    const next = ui.afterAuth; ui.afterAuth = null;
+    if (next) setTimeout(next, 300);
   } catch (e) {
     const el = document.getElementById('au-err');
     if (el) el.textContent = authError(e);
@@ -1438,6 +1456,13 @@ async function doAuth(fn) {
 Object.assign(A, {
   'auth-open': (el) => authModal(el.dataset.mode || 'login'),
   'need-login': () => authModal('signup'),
+  'skin-gate': (el) => {
+    const m = el.dataset.mode;
+    closeModal();
+    if (m === 'manual') return startSkin(true);
+    ui.afterAuth = () => { if (route().page !== 'peau') go('peau'); startSkin(); };
+    authModal(m);
+  },
   'auth-submit': () => {
     const email = document.getElementById('au-email').value.trim(), pass = document.getElementById('au-pass').value;
     if (!email || !pass) { document.getElementById('au-err').textContent = 'Remplis l\'e-mail et le mot de passe.'; return; }
