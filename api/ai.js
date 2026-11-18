@@ -222,12 +222,12 @@ function underLimit(uid) {
   return true;
 }
 
-async function gemini({ system, contents, schema, temperature = 0.6 }) {
+async function gemini({ system, contents, schema, temperature = 0.6, timeout = 45000 }) {
   const key = process.env.GEMINI_API_KEY;
   // Modèle principal puis modèles de secours (quotas et charge séparés)
   // Modèles testés avec la clé du projet (nov. 2026) : 2.5 fermé aux nouvelles clés, 3.5+ souvent saturés
   const models = [...new Set([process.env.GEMINI_MODEL || 'gemini-3-flash-preview', 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite'])];
-  const deadline = Date.now() + 100000;
+  const deadline = Date.now() + 108000;
   let lastErr = { status: 502, msg: 'Aucun modèle disponible' };
   for (const model of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -237,7 +237,7 @@ async function gemini({ system, contents, schema, temperature = 0.6 }) {
       const generationConfig = { maxOutputTokens: 8192, ...(legacy ? { temperature, thinkingConfig: { thinkingBudget: 0 } } : { thinkingConfig: { thinkingLevel: 'low' } }) };
       if (schema) { generationConfig.responseMimeType = 'application/json'; generationConfig.responseSchema = schema; }
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), Math.min(model === models[0] ? 45000 : 30000, deadline - Date.now()));
+      const timer = setTimeout(() => ctrl.abort(), Math.min(model === models[0] ? timeout : 30000, deadline - Date.now()));
       let r;
       try {
         r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -271,7 +271,7 @@ async function gemini({ system, contents, schema, temperature = 0.6 }) {
       const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
       if (!text) throw { status: 502, msg: 'Réponse vide de l\'IA', detail: data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason };
       if (!schema) return text.trim();
-      try { return JSON.parse(text); }
+      try { const o = JSON.parse(text); if (o && typeof o === 'object') Object.defineProperty(o, '__model', { value: model, enumerable: false }); return o; }
       catch { console.error('Gemini JSON invalide', model, text.slice(0, 200)); lastErr = { status: 502, msg: 'Réponse de l\'IA incomplète, réessaie.', keep: true }; continue; }
     }
   }
@@ -300,13 +300,13 @@ async function diag(res, req) {
       const r = kind === 'scan'
         ? await gemini({ system: SKIN_SYSTEM, schema: SCHEMAS.scan, contents: [{ role: 'user', parts: [{ text: 'Photo 1 : de face' }, img(tiny)] }] })
         : kind === 'skinplan'
-        ? await gemini({ system: `${PLAN_SYSTEM}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.skinplan, contents: [{ role: 'user', parts: [{ text: 'Personne : {"sexe":"homme","age":30}\n\nAnalyse : {"type":"mixte","zones":[{"zone":"nez","constat":"pores dilatés et nombreux points noirs sur les ailes du nez"},{"zone":"joue_d","constat":"3 marques brunes laissées par d\'anciens boutons"}]}\n\nRéponses : [{"question":"Tu nettoies ton visage le soir ?","reponse":"Tous les soirs","statut":"déjà bien"},{"question":"Tu mets une protection solaire ?","reponse":"Jamais","statut":"à améliorer"}]' }] }] })
+        ? await gemini({ system: `${PLAN_SYSTEM}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.skinplan, timeout: 80000, contents: [{ role: 'user', parts: [{ text: 'Personne : {"sexe":"homme","age":30}\n\nAnalyse : {"type":"mixte","zones":[{"zone":"nez","constat":"pores dilatés et nombreux points noirs sur les ailes du nez"},{"zone":"joue_d","constat":"3 marques brunes laissées par d\'anciens boutons"}]}\n\nRéponses : [{"question":"Tu nettoies ton visage le soir ?","reponse":"Tous les soirs","statut":"déjà bien"},{"question":"Tu mets une protection solaire ?","reponse":"Jamais","statut":"à améliorer"}]' }] }] })
         : kind === 'weekly'
         ? await gemini({ system: WEEKLY_SYSTEM, schema: SCHEMAS.weekly, contents: [{ role: 'user', parts: [{ text: 'Contexte : objectif masse musculaire, homme 30 ans, 3 séances prévues.\n\nBilan de la semaine : {"seances":"2/3","eau_moyenne_ml":1700,"sommeil_moyen_min":405,"pas_moyens":6200,"kcal_moyennes":2300,"poids_debut":82,"poids_fin":82.4,"retours_exercices":{"trop_dur":1,"parfait":6,"trop_facile":3}}' }] }] })
         : kind === 'products'
         ? await gemini({ system: `${PRODUCTS_SYSTEM}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.products, contents: [{ role: 'user', parts: [{ text: 'Profil de peau : {"type":"Peau mixte","preoccupations":["Points noirs / pores","Brillance"],"sexe":"homme","age":30}' }] }] })
         : await gemini({ system: `${SKIN_SYSTEM_V1}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.skin, contents: [{ role: 'user', parts: [{ text: 'Analyse cette photo.' }, img(tiny)] }] });
-      return res.status(200).json({ ok: true, ms: Date.now() - t0, keys: Object.keys(r), sample: JSON.stringify(r).slice(0, 900) });
+      return res.status(200).json({ ok: true, ms: Date.now() - t0, keys: Object.keys(r), model: r?.__model, sample: JSON.stringify(r).slice(0, Number(req.query.len) || 900) });
     } catch (e) { return res.status(200).json({ ok: false, ms: Date.now() - t0, err: e?.msg || String(e) }); }
   }
   const cands = req.query?.models ? String(req.query.models).split(',').slice(0, 8) : out.models.filter((m) => /flash/.test(m) && !/image|tts|audio|live|preview-0|exp/.test(m)).slice(0, 8);
@@ -355,9 +355,9 @@ export default async function handler(req, res) {
       const labels = ['Photo 1 : de face', 'Photo 2 : tête tournée d\'un côté', 'Photo 3 : tête tournée de l\'autre côté'];
       const parts = [{ text: `Personne : ${JSON.stringify(body.answers || {}).slice(0, 300)}. Analyse minutieusement ces photos du même visage.` }];
       body.images.slice(0, 3).forEach((im, i) => { parts.push({ text: labels[i] }); parts.push(img(im)); });
-      out = await gemini({ system: SKIN_SYSTEM, schema: SCHEMAS.scan, temperature: 0.2, contents: [{ role: 'user', parts }] });
+      out = await gemini({ system: SKIN_SYSTEM, schema: SCHEMAS.scan, temperature: 0.2, timeout: 60000, contents: [{ role: 'user', parts }] });
     } else if (body.task === 'skinplan') {
-      out = await gemini({ system: `${PLAN_SYSTEM}\n\n${PRODUCT_RULES(body.country)}`, schema: SCHEMAS.skinplan, contents: [{ role: 'user', parts: [{ text: `Personne : ${JSON.stringify(body.person || {}).slice(0, 300)}\n\nAnalyse de sa peau : ${JSON.stringify(body.analysis || {}).slice(0, 6000)}\n\nSes réponses (routine et habitudes) : ${JSON.stringify(body.routine || []).slice(0, 3000)}` }] }] });
+      out = await gemini({ system: `${PLAN_SYSTEM}\n\n${PRODUCT_RULES(body.country)}`, schema: SCHEMAS.skinplan, timeout: 80000, contents: [{ role: 'user', parts: [{ text: `Personne : ${JSON.stringify(body.person || {}).slice(0, 300)}\n\nAnalyse de sa peau : ${JSON.stringify(body.analysis || {}).slice(0, 6000)}\n\nSes réponses (routine et habitudes) : ${JSON.stringify(body.routine || []).slice(0, 3000)}` }] }] });
     } else if (body.task === 'skin') {
       if (!body.image) return res.status(400).json({ error: 'Photo manquante' });
       out = await gemini({ system: `${SKIN_SYSTEM_V1}\n\n${PRODUCT_RULES(body.country)}`, schema: SCHEMAS.skin, temperature: 0.2, contents: [{ role: 'user', parts: [{ text: `Réponses au questionnaire : ${JSON.stringify(body.answers || {}).slice(0, 2000)}\nAnalyse cette photo.` }, img(body.image)] }] });
