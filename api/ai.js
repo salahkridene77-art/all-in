@@ -37,6 +37,15 @@ ${SAFETY}`;
 const BRIEF_SYSTEM = `Tu es le coach d'All In. Rédige le brief du jour de l'utilisateur à partir de ses données : un titre de 2 à 5 mots, un message de 2 phrases maximum qui relie ses chiffres récents (sommeil, eau, pas, séance, nutrition) à ce qu'il doit faire aujourd'hui, et UNE action prioritaire très concrète. Tutoiement, ton motivant, en français.
 ${SAFETY}`;
 
+const WEEKLY_SYSTEM = `Tu es le coach d'All In. Rédige le bilan de la semaine écoulée de l'utilisateur à partir de ses données (séances faites, eau, sommeil, pas, calories, poids, retours sur les exercices).
+- titre : 3 à 6 mots, positif et honnête.
+- resume : 2 phrases qui racontent la semaine avec ses vrais chiffres.
+- points_forts : 2 ou 3 réussites concrètes (avec chiffres quand c'est possible).
+- a_ameliorer : 1 ou 2 points, formulés avec bienveillance, sans culpabiliser.
+- objectifs : exactement 3 objectifs précis et mesurables pour la semaine qui vient, adaptés à son objectif.
+Tutoiement, en français, ton motivant.
+${SAFETY}`;
+
 const SKIN_SYSTEM = `Tu es l'assistant skincare d'All In. Tu donnes des conseils COSMÉTIQUES, tu n'es pas dermatologue et tu ne poses aucun diagnostic médical.
 On t'envoie une photo de visage (selfie), le sexe et l'âge de la personne, et son pays.
 - Décris uniquement l'état visible de la peau : brillance, boutons, points noirs/pores, rougeurs, sécheresse, taches, ridules, cernes, teint terne.
@@ -100,6 +109,10 @@ const SCHEMAS = {
     required: ['quality', 'skinType', 'observations', 'summary', 'tips', 'seeDoctor', 'privilegier', 'eviter', 'products'],
   }),
   products: S('OBJECT', { properties: { ...INGR, products: PRODUCT_LIST }, required: ['privilegier', 'eviter', 'products'] }),
+  weekly: S('OBJECT', {
+    properties: { titre: S('STRING'), resume: S('STRING'), points_forts: S('ARRAY', { items: S('STRING') }), a_ameliorer: S('ARRAY', { items: S('STRING') }), objectifs: S('ARRAY', { items: S('STRING') }) },
+    required: ['titre', 'resume', 'points_forts', 'a_ameliorer', 'objectifs'],
+  }),
   meal: S('OBJECT', {
     properties: {
       isFood: S('BOOLEAN'),
@@ -217,7 +230,9 @@ async function diag(res, req) {
     const t0 = Date.now();
     try {
       const kind = req.query.selftest;
-      const r = kind === 'products'
+      const r = kind === 'weekly'
+        ? await gemini({ system: WEEKLY_SYSTEM, schema: SCHEMAS.weekly, contents: [{ role: 'user', parts: [{ text: 'Contexte : objectif masse musculaire, homme 30 ans, 3 séances prévues.\n\nBilan de la semaine : {"seances":"2/3","eau_moyenne_ml":1700,"sommeil_moyen_min":405,"pas_moyens":6200,"kcal_moyennes":2300,"poids_debut":82,"poids_fin":82.4,"retours_exercices":{"trop_dur":1,"parfait":6,"trop_facile":3}}' }] }] })
+        : kind === 'products'
         ? await gemini({ system: `${PRODUCTS_SYSTEM}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.products, contents: [{ role: 'user', parts: [{ text: 'Profil de peau : {"type":"Peau mixte","preoccupations":["Points noirs / pores","Brillance"],"sexe":"homme","age":30}' }] }] })
         : await gemini({ system: `${SKIN_SYSTEM}\n\n${PRODUCT_RULES({ label: 'Algérie', currency: 'dinars algériens (DA)' })}`, schema: SCHEMAS.skin, contents: [{ role: 'user', parts: [{ text: 'Analyse cette photo.' }, img(tiny)] }] });
       return res.status(200).json({ ok: true, ms: Date.now() - t0, keys: Object.keys(r), sample: JSON.stringify(r).slice(0, 900) });
@@ -260,6 +275,8 @@ export default async function handler(req, res) {
         else contents.push({ role: m.role, parts: [{ text: m.parts[0].text }] });
       });
       out = { text: await gemini({ system: COACH_SYSTEM, contents, temperature: 0.7 }) };
+    } else if (body.task === 'weekly') {
+      out = await gemini({ system: WEEKLY_SYSTEM, schema: SCHEMAS.weekly, contents: [{ role: 'user', parts: [{ text: `${ctxText(body.context)}\n\nBilan de la semaine : ${JSON.stringify(body.week || {}).slice(0, 4000)}` }] }] });
     } else if (body.task === 'brief') {
       out = await gemini({ system: BRIEF_SYSTEM, schema: SCHEMAS.brief, contents: [{ role: 'user', parts: [{ text: ctxText(body.context) }] }], temperature: 0.8 });
     } else if (body.task === 'skin') {

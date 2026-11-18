@@ -444,7 +444,7 @@ export const V2_FEATURES = [
   ['⌚', 'Apple Santé / Google Fit', 'Pas et sommeil synchronisés automatiquement'],
   ['🔔', 'Rappels', 'Notifications pour boire, dormir et t\'entraîner'],
   ['🏆', 'Défis entre amis', 'Classements, badges et défis à plusieurs'],
-  ['📈', 'Bilans mensuels', 'Ton évolution du mois résumée par le coach'],
+  ['🌙', 'Mode Ramadan', 'Repas, hydratation et séances adaptés au jeûne'],
 ];
 
 /* ---------- Pays (produits conseillés selon le pays) ---------- */
@@ -461,3 +461,15 @@ export const COUNTRIES = {
   CI: { label: 'Côte d\'Ivoire', flag: '🇨🇮', cur: 'francs CFA (FCFA)' },
   OTHER: { label: 'Autre pays', flag: '🌍', cur: 'monnaie locale' },
 };
+
+/* ---------- Offre ---------- */
+// Limites de l'offre gratuite, par semaine
+export const FREE_LIMITS = { coach: 5, scan: 1, meal: 3, review: 0 };
+export const LIMIT_LABELS = { coach: 'messages au coach', scan: 'scan peau avec IA', meal: 'photos de repas', review: 'bilans IA' };
+export const PREMIUM_FEATURES = [
+  ['🤖', 'Coach IA illimité', 'Pose toutes tes questions, il adapte tes séances à ta forme du jour'],
+  ['✨', 'Scans peau illimités', 'Suis l\'évolution de ta peau, avec les produits de ton pays'],
+  ['📸', 'Photos de repas illimitées', 'Les calories se remplissent toutes seules'],
+  ['📊', 'Bilan du dimanche par le coach', 'Ce qui a marché, ce qui coince, tes 3 objectifs de la semaine'],
+  ['📈', 'Programme qui évolue avec toi', 'Charges, répétitions et semaines légères ajustées à tes retours'],
+];

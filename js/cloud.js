@@ -107,7 +107,8 @@ const storeSync = (s) => { try { localStorage.setItem(syncKey(), JSON.stringify(
 
 function mainPayload() {
   const { photos, ...skin } = S.skin || {};
-  return { profile: S.profile, weights: S.weights, skin, settings: S.settings || {}, coach: (S.coach || []).slice(-40), brief: S.brief || null };
+  return { profile: S.profile, weights: S.weights, skin, settings: S.settings || {}, coach: (S.coach || []).slice(-40), brief: S.brief || null,
+    progress: S.progress || {}, feedback: (S.feedback || []).slice(-120), reviews: S.reviews || {}, premium: S.premium || {}, usage: S.usage || {} };
 }
 const dayStr = (d) => { const { u, ...rest } = d; return JSON.stringify(rest); };
 const isEmptyDay = (d) => !d || (!d.water && !d.steps && !(d.meals || []).length && !d.sleep && !d.workout);
@@ -132,6 +133,8 @@ export async function pullAndMerge() {
     // Données principales (profil, pesées, peau, coach)
     if (mainSnap.exists()) {
       const r = mainSnap.data();
+      S.planServer = r.plan || null;
+      S.planUntil = r.planUntil || null;
       const localDirty = JSON.stringify(mainPayload()) !== sync.main;
       const remoteChanged = (r.mainAt || 0) > (sync.mainAt || 0);
       if (!S.profile || (remoteChanged && (!localDirty || !sync.main))) {
@@ -144,6 +147,7 @@ export async function pullAndMerge() {
         S.settings = r.settings || S.settings || {};
         S.coach = r.coach || S.coach || [];
         if (r.brief) S.brief = r.brief;
+        ['progress', 'feedback', 'reviews', 'premium', 'usage'].forEach((k) => { if (r[k]) S[k] = r[k]; });
         sync.main = JSON.stringify(mainPayload());
         sync.mainAt = r.mainAt || 0;
       }
@@ -186,7 +190,7 @@ export async function push() {
   const now = Date.now();
   const main = mainPayload();
   const mainS = JSON.stringify(main);
-  if (mainS !== sync.main) { batch.set(F.doc(db, 'users', uid), { ...main, mainAt: now, email: cloud.user.email || '' }); sync.main = mainS; sync.mainAt = now; n++; }
+  if (mainS !== sync.main) { batch.set(F.doc(db, 'users', uid), { ...main, mainAt: now, email: cloud.user.email || '' }, { merge: true }); sync.main = mainS; sync.mainAt = now; n++; }
   for (const [k, d] of Object.entries(S.days)) {
     if (isEmptyDay(d) && !sync.days[k]) continue;
     const s = dayStr(d);
@@ -230,6 +234,7 @@ async function mockAi(task, p) {
     { etape: 'Protection solaire', marque: 'Garnier', produit: 'Ambre Solaire Super UV fluide SPF 50+', contient: ['Filtres UV'], pourquoi: 'Texture légère qui ne brille pas.', prix: 'env. 12 €', ou: 'grande surface', budget: 'petit prix' },
   ];
   const ingr = { privilegier: [{ ingredient: 'Niacinamide', pourquoi: 'Régule le sébum et resserre les pores.' }, { ingredient: 'Zinc', pourquoi: 'Calme les petits boutons.' }], eviter: [{ quoi: 'Savons décapants', pourquoi: 'Ils relancent la production de sébum.', exemples: 'savons solides classiques, gels très moussants' }] };
+  if (task === 'weekly') return { titre: 'Une semaine solide', resume: 'Tu as fait 3 séances et bu 1,8 L par jour en moyenne.', points_forts: ['3 séances sur 3', 'Sommeil régulier'], a_ameliorer: ['Un peu plus d\'eau le matin'], objectifs: ['Boire 2 L chaque jour', 'Faire tes 3 séances', 'Te coucher avant 23 h 30'] };
   if (task === 'brief') return { title: 'Garde le rythme', message: `Tu as bu ${p.context?.aujourdhui?.eau_ml ?? 0} ml d'eau. Ta séance du jour t'attend.`, action: 'Bois 2 verres d\'eau avant midi' };
   if (task === 'coach') return { text: 'Bonne question ! Voici ce que je te propose :\n- **Échauffe-toi** 5 min\n- Fais 3 séries de squats\n- Bois un grand verre d\'eau' };
   if (task === 'skin') return { quality: 'good', qualityNote: '', skinType: 'mixte', observations: [{ zone: 'nez', issue: 'points', level: 'modéré', note: 'Pores dilatés sur le nez' }, { zone: 'front', issue: 'brillance', level: 'léger', note: '' }], summary: 'Peau plutôt mixte avec quelques points noirs sur le nez.', tips: ['Utilise un BHA 2 à 3 soirs par semaine', 'Garde un hydratant léger'], seeDoctor: false, seeDoctorReason: '', ...ingr, products: prods };

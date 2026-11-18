@@ -14,6 +14,11 @@ const blank = () => ({
   settings: {},
   coach: [],
   brief: null,
+  progress: {},   // ajustements par exercice (programme évolutif)
+  feedback: [],   // retours après chaque exercice
+  reviews: {},    // bilans hebdomadaires
+  premium: {},    // essai, offre
+  usage: {},      // compteurs de la semaine (offre gratuite)
 });
 
 function load() {
@@ -64,6 +69,17 @@ export function prettyDate(d = new Date()) {
 export function shortDate(k) {
   return parseKey(k).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 }
+
+export function weekKey(k = today()) {
+  const d = parseKey(k);
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dn = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - dn);
+  const y = t.getUTCFullYear();
+  const w = Math.ceil(((t - Date.UTC(y, 0, 1)) / 864e5 + 1) / 7);
+  return `${y}-S${String(w).padStart(2, '0')}`;
+}
+export const mondayOf = (k = today()) => addDays(k, 1 - weekdayMon(parseKey(k)));
 
 export function day(k = today()) {
   if (!S.days[k]) S.days[k] = { water: 0, steps: 0, meals: [], sleep: null, workout: null };
@@ -174,7 +190,33 @@ function candidates(slot, place, lvl) {
   return list.sort((a, b) => Math.abs(a[1].lvl - lvl) - Math.abs(b[1].lvl - lvl) || (a[1].place === place ? -1 : 1));
 }
 
+/* ---------- Programme évolutif ---------- */
+export function weekNumber(p = S.profile) {
+  const start = parseKey(p?.createdAt || today());
+  return Math.max(1, Math.floor((parseKey(today()) - start) / (7 * 864e5)) + 1);
+}
+// Toutes les 4 semaines : semaine plus légère pour récupérer (une série de moins)
+export const isLightWeek = (p = S.profile) => weekNumber(p) % 4 === 0;
+export const progressShift = (id) => Math.max(-3, Math.min(3, S.progress?.[id]?.delta || 0));
+export function shiftTarget(target, unit, shift) {
+  if (!shift) return target;
+  if (unit === 'reps') return target.replace(/\d+/g, (n) => Math.max(4, Number(n) + 2 * shift));
+  if (unit === 'time') return target.replace(/\d+/g, (n) => Math.max(15, Number(n) + 10 * shift));
+  return target.replace(/\d+/, (n) => Math.max(5, Number(n) + 2 * shift));
+}
+export function recordFeedback(id, f) {
+  // f : -1 trop dur, 0 parfait, +1 trop facile
+  S.progress = S.progress || {};
+  const cur = S.progress[id] || { delta: 0, n: 0 };
+  cur.delta = Math.max(-3, Math.min(3, cur.delta + f));
+  cur.n = (cur.n || 0) + 1;
+  cur.last = today();
+  S.progress[id] = cur;
+  S.feedback = [...(S.feedback || []), { d: today(), id, f }].slice(-120);
+}
+
 export function buildPlan(p = S.profile) {
+  const light = isLightWeek(p);
   const lvl = Number(p.level);
   const scheme = SCHEMES[p.goal];
   const keys = SPLITS[p.days](p.goal);
@@ -190,9 +232,11 @@ export function buildPlan(p = S.profile) {
         const [id, e] = c[(variant + rep + j) % c.length];
         if (!used.has(id)) {
           used.add(id);
-          const sets = scheme.sets[lvl - 1];
-          const target = e.unit === 'reps' ? `${scheme.reps} reps` : e.unit === 'time' ? scheme.time : (['perte_poids', 'endurance'].includes(p.goal) ? '20 min' : '12 min');
-          exercises.push({ id, ...e, sets: e.unit === 'cardio' ? 1 : sets, target, rest: e.unit === 'cardio' ? 0 : scheme.rest });
+          const base = e.unit === 'reps' ? `${scheme.reps} reps` : e.unit === 'time' ? scheme.time : (['perte_poids', 'endurance'].includes(p.goal) ? '20 min' : '12 min');
+          const shift = progressShift(id);
+          const sets = Math.max(1, scheme.sets[lvl - 1] - (light ? 1 : 0));
+          const target = shiftTarget(base, e.unit, shift);
+          exercises.push({ id, ...e, sets: e.unit === 'cardio' ? 1 : sets, target, baseTarget: base, shift, rest: e.unit === 'cardio' ? 0 : scheme.rest });
           break;
         }
       }

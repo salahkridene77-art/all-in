@@ -5,7 +5,7 @@ import * as D from './data.js';
 import {
   S, save, resetAll, replaceState, today, day, peekDay, lastDays, dayLetter, addDays, parseKey, weekdayMon,
   DAY_SHORT, DAY_NAMES, prettyDate, shortDate, targets, bmi, currentWeight, dayNutrition, sleepMinutes, fmtDur,
-  buildPlan, todaySession, streak, dayScore, isTrainingDay, esc, fmt, ring, bar, barChart, lineChart, toast, openModal, closeModal, beep, pad, onSave,
+  buildPlan, todaySession, streak, dayScore, isTrainingDay, weekNumber, isLightWeek, recordFeedback, weekKey, mondayOf, esc, fmt, ring, bar, barChart, lineChart, toast, openModal, closeModal, beep, pad, onSave,
 } from './core.js';
 import { exerciseAnim, hasAnim } from './anim.js';
 import { cloud, initCloud, schedulePush, signUp, signIn, signInGoogle, resetPassword, signOutUser, authError, ai, pullAndMerge } from './cloud.js';
@@ -46,7 +46,7 @@ function render() {
     if (!ui.ob) ui.ob = newOb(true);
     app.innerHTML = viewOnboarding();
   } else {
-    const views = { home: viewHome, sport: viewSport, wk: viewWorkout, coach: viewCoach, nutrition: viewNutrition, suivi: () => viewSuivi(sub || 'eau'), peau: viewPeau, profil: viewProfil };
+    const views = { home: viewHome, sport: viewSport, wk: viewWorkout, coach: viewCoach, nutrition: viewNutrition, suivi: () => viewSuivi(sub || 'eau'), peau: viewPeau, profil: viewProfil, premium: viewPremium, bilan: viewBilan };
     const v = views[page] || viewHome;
     const noNav = page === 'wk';
     app.innerHTML = v() + (noNav ? '' : nav(page));
@@ -66,7 +66,7 @@ function afterRender(page) {
 
 function nav(page) {
   const tabs = [['home', '🏠', 'Accueil'], ['sport', '🏋️', 'Sport'], ['coach', '🤖', 'Coach'], ['nutrition', '🥗', 'Nutrition'], ['suivi', '📊', 'Suivi'], ['peau', '✨', 'Peau']];
-  return `<nav class="nav"><div class="nav-in">${tabs.map(([k, i, l]) => `<a href="#/${k}" class="${page === k || (k === 'home' && page === 'profil') ? 'on' : ''}"><span class="i">${i}</span>${l}</a>`).join('')}</div></nav>`;
+  return `<nav class="nav"><div class="nav-in">${tabs.map(([k, i, l]) => `<a href="#/${k}" class="${page === k || (k === 'home' && ['profil', 'premium', 'bilan'].includes(page)) ? 'on' : ''}"><span class="i">${i}</span>${l}</a>`).join('')}</div></nav>`;
 }
 
 function header(title, { back = null, right = '' } = {}) {
@@ -228,6 +228,8 @@ function viewHome() {
         <div class="score-legend">${parts.map(([l, v, c]) => `<div class="l"><span>${l}</span>${bar(v, c)}<b>${Math.round(v * 100)}%</b></div>`).join('')}</div></div>
       <p class="small" style="margin-top:12px;font-weight:700">${verdict}</p></div>
 
+    ${nudgeCard() ? `<div class="section">${nudgeCard()}</div>` : ''}
+    ${reviewCard() ? `<div class="section">${reviewCard()}</div>` : ''}
     <div class="section">${coachCard()}</div>
 
     <div class="section">${wk}</div>
@@ -272,7 +274,7 @@ function viewSport() {
       <div class="head" data-act="toggle-session" data-i="${s.idx}"><div class="row"><span class="num-badge">${s.idx + 1}</span><div><h3>${s.name}</h3><div class="xs muted" style="margin-top:2px">${DAY_NAMES[s.weekday - 1]} · ${s.exercises.length} exos · ~${s.minutes} min</div></div></div>
         <div class="row">${ses && ses.idx === s.idx ? '<span class="pill on">Aujourd\'hui</span>' : ''}<span class="dim">${open ? '▴' : '▾'}</span></div></div>
       ${open ? `<div class="body"><p class="small muted">${s.focus}</p>
-        ${s.exercises.map((e) => `<div class="ex-row" data-act="ex-info" data-id="${e.id}" data-sets="${e.sets}" data-target="${esc(e.target)}" data-rest="${e.rest}"><div class="ico">${e.icon}</div><div class="grow"><div style="font-weight:700">${e.name}</div><div class="meta">${e.unit === 'cardio' ? e.target : `${e.sets} × ${e.target}`}${e.rest ? ` · repos ${e.rest} s` : ''}</div></div><span class="dim">ⓘ</span></div>`).join('')}
+        ${s.exercises.map((e) => `<div class="ex-row" data-act="ex-info" data-id="${e.id}" data-sets="${e.sets}" data-target="${esc(e.target)}" data-rest="${e.rest}"><div class="ico">${e.icon}</div><div class="grow"><div style="font-weight:700">${e.name}</div><div class="meta">${e.unit === 'cardio' ? e.target : `${e.sets} × ${e.target}`}${e.rest ? ` · repos ${e.rest} s` : ''}${e.shift ? ` <b style="color:${e.shift > 0 ? 'var(--steps)' : 'var(--food)'}">${e.shift > 0 ? '↑' : '↓'}</b>` : ''}</div></div><span class="dim">ⓘ</span></div>`).join('')}
         ${s.finisher ? `<p class="small" style="margin-top:10px;color:var(--accent)">${s.finisher}</p>` : ''}
         <button class="btn primary block" style="margin-top:14px" data-act="start-wk" data-i="${s.idx}">▶ Commencer</button></div>` : ''}</div>`;
   }).join('');
@@ -284,10 +286,12 @@ function viewSport() {
     <div class="section card flat" style="background:var(--card2)"><div class="row" style="align-items:flex-start"><span style="font-size:22px">🔥</span><div><h3>Échauffement (5 min, avant chaque séance)</h3>
       <p class="small muted" style="margin-top:5px;line-height:1.5">Rotations des épaules, des hanches et des chevilles · 1 min de jumping jacks ou montées de genoux · 10 squats lents · 10 pompes faciles (mains en hauteur).</p></div></div></div>
 
+    <div class="section">${progressCard(plan)}</div>
     <div class="section"><div class="section-title"><h2>Ton programme</h2></div>${sessions}</div>
 
     <div class="section card"><h3>Comment progresser</h3><ul class="list-plain" style="margin-top:10px">
-      <li>Quand toutes les séries sont faciles, ajoute 1 à 2 répétitions ou un peu de charge.</li>
+      <li>Après chaque exercice, ton retour (trop dur, parfait, trop facile) ajuste automatiquement tes répétitions.</li>
+      <li>Toutes les 4 semaines, une semaine plus légère laisse ton corps récupérer.</li>
       <li>Garde 1 à 2 répétitions « en réserve » : la technique passe avant tout.</li>
       <li>Une douleur articulaire vive = on arrête l'exercice.</li>
       <li>Fin de séance : 5 min d'étirements doux et un grand verre d'eau.</li></ul></div>
@@ -338,10 +342,20 @@ function completeSet() {
   w.setsDone++;
   stopWorkoutTimer();
   w.chrono = false;
-  const lastSet = w.set >= e.sets;
+  const lastSet = w.set >= e.sets || e.unit === 'cardio';
+  if (lastSet) { w.phase = 'feedback'; rerender(); return; }
+  w.set++;
+  if (e.rest) { w.phase = 'rest'; w.left = e.rest; wkTimer = setInterval(tick, 1000); }
+  else w.phase = 'work';
+  rerender();
+}
+
+function afterFeedback(f) {
+  const w = ui.wk, e = w.s.exercises[w.ex];
+  if (f !== null) recordFeedback(e.id, f);
   const lastEx = w.ex >= w.s.exercises.length - 1;
-  if (lastSet && lastEx) return finishWorkout();
-  if (lastSet) { w.ex++; w.set = 1; } else { w.set++; }
+  if (lastEx) return finishWorkout();
+  w.ex++; w.set = 1;
   if (e.rest) { w.phase = 'rest'; w.left = e.rest; wkTimer = setInterval(tick, 1000); }
   else w.phase = 'work';
   rerender();
@@ -375,11 +389,18 @@ function viewWorkout() {
   }
 
   const e = exs[w.ex];
+  if (w.phase === 'feedback') {
+    return `<div class="view no-nav workout">${top}${prog}<div class="wk-main"><div class="wk-ico">${e.icon}</div><div><div class="xs upper muted">${e.name} terminé</div><h1 style="margin-top:6px">C'était comment ?</h1>
+      <p class="small muted" style="margin-top:6px;line-height:1.5">Ta réponse ajuste ${e.unit === 'reps' ? 'tes répétitions' : 'ta durée'} pour les prochaines séances.</p></div>
+      <div class="col" style="width:100%;gap:10px"><button class="btn block fb-btn" data-act="wk-fb" data-v="-1">😮‍💨 Trop dur</button><button class="btn block fb-btn" data-act="wk-fb" data-v="0">👌 Parfait</button><button class="btn block fb-btn" data-act="wk-fb" data-v="1">💪 Trop facile</button></div></div>
+      <button class="btn ghost block sm" data-act="wk-fb" data-v="skip">Passer</button></div>`;
+  }
   if (w.phase === 'rest') {
     const tot = exs[w.set === 1 ? w.ex - 1 : w.ex]?.rest || 60;
+    const lightTxt = isLightWeek() ? '<p class="xs muted">Semaine légère : une série de moins</p>' : '';
     return `<div class="view no-nav workout">${top}${prog}<div class="wk-main"><div class="xs upper muted">Repos</div>
       <div class="rest-ring">${ring(w.left / tot, { size: 210, stroke: 14, color: 'var(--water)', inner: `<div><div class="t">${w.left}</div><div class="small muted">secondes</div></div>` })}</div>
-      <div class="card" style="width:100%;text-align:left"><div class="xs upper muted">À suivre</div><div class="row" style="margin-top:8px"><span style="font-size:28px">${e.icon}</span><div><b>${e.name}</b><div class="small muted">Série ${w.set} / ${e.sets} · ${e.target}</div></div></div></div></div>
+      <div class="card" style="width:100%;text-align:left"><div class="xs upper muted">À suivre</div><div class="row" style="margin-top:8px"><span style="font-size:28px">${e.icon}</span><div><b>${e.name}</b><div class="small muted">Série ${w.set} / ${e.sets} · ${e.target}</div></div></div></div>${lightTxt}</div>
       <div class="row"><button class="btn grow" data-act="rest-add">+15 s</button><button class="btn primary grow" data-act="rest-skip">Passer le repos</button></div></div>`;
   }
 
@@ -427,7 +448,7 @@ function foodModal() {
   const list = D.FOODS.map((f, i) => ({ ...f, i })).filter((f) => !q || norm(f.n).includes(norm(q)));
   const cats = [...new Set(list.map((f) => f.c))];
   const html = `<div class="modal-head"><div><h2>Ajouter</h2><p class="small muted">${ui.meal}</p></div><button class="icon-btn" data-act="close-modal">✕</button></div>
-    ${cloud.user ? `<label class="btn block ai-btn" style="margin-bottom:12px">📸 Photo de mon assiette <span class="pill on" style="padding:3px 8px">IA</span><input type="file" accept="image/*" capture="environment" data-on="meal-photo" hidden></label>`
+    ${cloud.user ? `<label class="btn block ai-btn" style="margin-bottom:12px">📸 Photo de mon assiette <span class="pill on" style="padding:3px 8px">IA</span>${isPro() ? '' : `<span class="xs" style="opacity:.7">${quotaLeft('meal')}/${D.FREE_LIMITS.meal}</span>`}<input type="file" accept="image/*" capture="environment" data-on="meal-photo" hidden></label>`
       : cloud.enabled ? `<button class="btn block ai-btn" style="margin-bottom:12px" data-act="need-login">📸 Photo de mon assiette <span class="pill" style="padding:3px 8px">IA · connexion</span></button>` : ''}
     <input id="food-q" class="input" data-on="food-search" placeholder="🔍 Rechercher un aliment…" value="${esc(ui.foodQ)}" autocomplete="off">
     <div class="field" style="margin-top:12px"><label>Quantité</label><div class="seg">${[[0.5, '½'], [1, '1'], [1.5, '1½'], [2, '2'], [3, '3']].map(([v, l]) => `<button class="${ui.portion === v ? 'on' : ''}" data-act="portion" data-v="${v}">${l}×</button>`).join('')}</div></div>
@@ -711,7 +732,8 @@ function proceedWithPhoto() {
   ui.skin.photo = null; // la photo disparaît de l'écran et de la mémoire de l'appli
   const manual = () => { ui.skin.manual = true; ui.skin.step = 'zones'; ui.skin.sel = 'front'; rerender(); };
   if (!data || !cloud.user) return manual();
-  withConsent(() => { ui.skin.pending = data; startSkinAi(data); ui.skin.manual = false; ui.skin.step = 'questions'; rerender(); }, manual);
+  if (!requireQuota('scan', manual)) return;
+  withConsent(() => { consume('scan'); ui.skin.pending = data; startSkinAi(data); ui.skin.manual = false; ui.skin.step = 'questions'; rerender(); }, manual);
 }
 
 /* L'analyse IA démarre tout de suite, pendant que la personne répond aux questions */
@@ -955,18 +977,21 @@ function viewProfil() {
     <div class="card row" style="gap:14px"><div class="avatar" style="width:60px;height:60px;font-size:24px">${esc(p.name[0]?.toUpperCase())}</div>
       <div class="grow"><h2>${esc(p.name)}</h2><p class="small muted" style="margin-top:3px">${p.age} ans · ${p.height} cm · ${currentWeight().toFixed(1).replace('.', ',')} kg · ${countryInfo().flag} ${countryInfo().label}</p><p class="small" style="margin-top:3px">${D.GOALS[p.goal].icon} ${D.GOALS[p.goal].label}</p></div></div>
     <div class="section">${accountCard()}</div>
+    ${planCard() ? `<div class="section">${planCard()}</div>` : ''}
     <div class="section grid3"><div class="card center" style="padding:12px"><div class="mid-num">${daysUsed}</div><div class="xs muted">jours suivis</div></div><div class="card center" style="padding:12px"><div class="mid-num">${Object.values(S.days).filter((d) => d.workout).length}</div><div class="xs muted">séances</div></div><div class="card center" style="padding:12px"><div class="mid-num">${streak()}</div><div class="xs muted">jours de suite</div></div></div>
     <div class="section card"><h3>Mes objectifs quotidiens</h3>
       ${[['🍽️', 'Calories', `${fmt(t.kcal)} kcal`], ['🥩', 'Protéines', `${t.prot} g`], ['💧', 'Eau', `${(t.waterBase / 1000).toFixed(1).replace('.', ',')} L (+0,5 L jour de sport)`], ['👟', 'Pas', fmt(t.steps)], ['😴', 'Sommeil', fmtDur(t.sleepMin).replace(' 00', '')], ['🏋️', 'Sport', `${p.days} séances / semaine`]].map(([i, l, v]) => `<div class="food-item"><span>${i}</span><div class="grow">${l}</div><b>${v}</b></div>`).join('')}
       ${calcDetails(t, p)}
       <button class="btn block" style="margin-top:12px" data-act="edit-profile">Modifier mon profil</button></div>
+    <div class="section">${remindersCard()}</div>
+    <div class="section card tap" data-act="go" data-to="bilan"><div class="row"><span style="font-size:24px">📊</span><div class="grow"><h3>Mes bilans de la semaine</h3><p class="small muted" style="margin-top:3px">Tes chiffres et tes objectifs, chaque dimanche</p></div><span class="dim">›</span></div></div>
     ${standalone ? '' : `<div class="section card"><h3>📲 Installer l'appli</h3><p class="small muted" style="margin-top:6px;line-height:1.5">${ios ? 'Sur iPhone : touche le bouton Partager de Safari, puis « Sur l\'écran d\'accueil ».' : 'Ajoute All In sur ton écran d\'accueil pour l\'ouvrir comme une vraie appli.'}</p>
       ${!ios ? `<button class="btn primary block" style="margin-top:12px" data-act="install">Installer</button>` : ''}</div>`}
     <div class="section card"><h3>Bientôt dans All In</h3><div class="col" style="margin-top:10px;gap:12px">${D.V2_FEATURES.map(([i, t1, d1]) => `<div class="row" style="align-items:flex-start"><span style="font-size:20px">${i}</span><div><b class="small">${t1}</b><p class="xs muted" style="margin-top:2px">${d1}</p></div></div>`).join('')}</div></div>
     <div class="section card"><h3>Mes données</h3><p class="small muted" style="margin-top:6px">${cloud.user ? 'Tes données sont sur ce téléphone et sauvegardées dans ton compte. Les photos de peau restent uniquement sur ce téléphone.' : 'Tout est enregistré sur ce téléphone. Crée un compte pour les sauvegarder, ou exporte une copie avant de changer d\'appareil.'}</p>
       <div class="row" style="margin-top:12px"><button class="btn grow sm" data-act="export">⬇ Exporter</button><label class="btn grow sm" style="cursor:pointer">⬆ Importer<input type="file" accept="application/json,.json" data-on="import" hidden></label></div>
       <button class="btn danger block sm" style="margin-top:8px" data-act="reset">Effacer toutes mes données</button></div>
-    <p class="note center section">All In · version 2.6</p></div>`;
+    <p class="note center section">All In · version 2.7</p></div>`;
 }
 
 /* ============================================================
@@ -1253,13 +1278,14 @@ function viewCoach() {
     <div class="chat">${intro}${bubbles}${ui.coachLoading ? '<div class="bubble ai typing"><i></i><i></i><i></i></div>' : ''}</div>
     ${!msgs.length || !ui.coachLoading ? `<div class="chips" style="margin-top:14px">${COACH_SUGGESTIONS.map((t) => `<button class="chip" data-act="coach-ask" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div>` : ''}
     <p class="note" style="margin-top:12px">Le coach donne des conseils généraux, il ne remplace pas un médecin.</p>
-    <div class="composer"><div class="composer-in"><textarea id="coach-in" rows="1" placeholder="Écris au coach…" data-on="coach-grow"></textarea><button class="send" data-act="coach-send" aria-label="Envoyer" ${ui.coachLoading ? 'disabled' : ''}>➤</button></div></div></div>`;
+    ${quotaHint('coach') ? `<div class="center" style="margin-top:10px">${quotaHint('coach')}</div>` : ''}<div class="composer"><div class="composer-in"><textarea id="coach-in" rows="1" placeholder="Écris au coach…" data-on="coach-grow"></textarea><button class="send" data-act="coach-send" aria-label="Envoyer" ${ui.coachLoading ? 'disabled' : ''}>➤</button></div></div></div>`;
 }
 
 async function sendCoach(text) {
   text = String(text || '').trim();
   if (!text || ui.coachLoading) return;
   if (!cloud.user) return authModal('signup');
+  if (!requireQuota('coach')) return;
   S.coach = S.coach || [];
   S.coach.push({ role: 'user', text, at: Date.now() });
   S.coach = S.coach.slice(-60);
@@ -1269,7 +1295,7 @@ async function sendCoach(text) {
   try {
     const r = await ai('coach', { messages: S.coach.slice(-16).map(({ role, text: t }) => ({ role, text: t })), context: buildContext() });
     S.coach.push({ role: 'ai', text: r.text, at: Date.now() });
-    save();
+    consume('coach');
   } catch (e) {
     S.coach.push({ role: 'ai', text: `⚠️ ${e.message}`, at: Date.now(), err: true });
   }
@@ -1360,6 +1386,7 @@ async function analyseMeal(img) {
   try {
     const r = await ai('meal', { image: img });
     ui.mealAi = { img, isFood: r.isFood, comment: r.comment, items: (r.items || []).map((x) => ({ ...x, sel: true, mult: 1 })) };
+    consume('meal');
   } catch (e) { ui.mealAi = { img, error: e.message }; }
   if (document.querySelector('.modal')) mealModal();
 }
@@ -1440,7 +1467,8 @@ Object.assign(A, {
   'skin-ai': () => {
     const last = S.settings?.keepSkinPhotos ? S.skin.photos[S.skin.photos.length - 1] : null;
     if (!last) return startSkin();
-    withConsent(() => runSkinAi(last.data));
+    if (!requireQuota('scan')) return;
+    withConsent(() => { consume('scan'); runSkinAi(last.data); });
   },
 
   'meal-toggle': (el) => { const x = ui.mealAi.items[+el.dataset.i]; x.sel = !x.sel; mealModal(); },
@@ -1458,6 +1486,7 @@ Object.assign(INPUTS, {
   'meal-photo': async (el) => {
     const f = el.files?.[0]; if (!f) return;
     try {
+      if (!requireQuota('meal', () => foodModal())) return;
       const img = await compressImage(f);
       withConsent(() => analyseMeal(img), () => foodModal());
     } catch { toast('Impossible de lire cette photo'); }
@@ -1530,6 +1559,283 @@ async function fetchProducts() {
 }
 
 Object.assign(A, { 'skin-products': () => fetchProducts() });
+
+/* ============================================================
+   V3 — Offre Premium, programme évolutif, bilan du dimanche, rappels
+   ============================================================ */
+
+/* ---------- Offre ---------- */
+function planInfo() {
+  const now = Date.now();
+  if (S.planServer === 'premium' && (!S.planUntil || new Date(S.planUntil).getTime() > now)) return { status: 'premium' };
+  const t = S.premium?.trialStart;
+  if (t) {
+    const left = Math.ceil((t + 7 * 864e5 - now) / 864e5);
+    if (left > 0) return { status: 'trial', left };
+  }
+  return { status: 'free', trialUsed: !!t };
+}
+const isPro = () => planInfo().status !== 'free';
+function usageOf(kind) {
+  const wk = weekKey();
+  if (!S.usage || S.usage.week !== wk) S.usage = { week: wk };
+  return S.usage[kind] || 0;
+}
+const quotaLeft = (kind) => Math.max(0, D.FREE_LIMITS[kind] - usageOf(kind));
+const canUse = (kind) => isPro() || quotaLeft(kind) > 0;
+function consume(kind) { usageOf(kind); S.usage[kind] = (S.usage[kind] || 0) + 1; save(); }
+function requireQuota(kind, onSkip) {
+  if (canUse(kind)) return true;
+  paywall(kind, onSkip);
+  return false;
+}
+const quotaHint = (kind) => (isPro() || !cloud.user ? '' : `<span class="pill ${quotaLeft(kind) ? '' : 'warn'}" style="padding:3px 9px;font-size:11px">${quotaLeft(kind)}/${D.FREE_LIMITS[kind]} gratuit${D.FREE_LIMITS[kind] > 1 ? 's' : ''} cette semaine</span>`);
+
+function startTrial() {
+  if (!cloud.user) return authModal('signup');
+  if (S.premium?.trialStart) return toast('Ton essai gratuit a déjà été utilisé');
+  S.premium = { ...(S.premium || {}), trialStart: Date.now() };
+  save(); closeModal();
+  toast('🎉 Premium activé pour 7 jours');
+  rerender();
+}
+
+function paywall(kind, onSkip) {
+  const p = planInfo();
+  ui.paywallSkip = onSkip || null;
+  openModal(`<div class="center" style="padding-top:4px"><div style="font-size:44px">⭐</div><h2 style="margin-top:8px">Passe à All In Premium</h2>
+    <p class="small muted" style="margin-top:8px;line-height:1.5">${kind ? `Tu as utilisé ${D.FREE_LIMITS[kind] ? `tes ${D.FREE_LIMITS[kind]} ${D.LIMIT_LABELS[kind]}` : 'les fonctions'} de l'offre gratuite cette semaine.` : ''} Avec Premium, tout est illimité.</p></div>
+    <div class="col" style="margin-top:16px;gap:10px">${D.PREMIUM_FEATURES.slice(0, 4).map(([i, t, d]) => `<div class="row" style="align-items:flex-start"><span style="font-size:20px">${i}</span><div><b class="small">${t}</b><p class="xs muted" style="margin-top:2px">${d}</p></div></div>`).join('')}</div>
+    ${!p.trialUsed ? `<button class="btn primary block" style="margin-top:18px" data-act="trial">Essayer 7 jours gratuitement</button>` : `<button class="btn primary block" style="margin-top:18px" data-act="go-premium">Voir l'offre Premium</button>`}
+    <button class="btn ghost block" style="margin-top:8px" data-act="paywall-skip">${onSkip ? 'Continuer sans l\'IA' : 'Plus tard'}</button>`);
+}
+
+function viewPremium() {
+  const p = planInfo();
+  const status = p.status === 'premium' ? '<span class="pill good">Premium actif</span>' : p.status === 'trial' ? `<span class="pill on">Essai · ${p.left} jour${p.left > 1 ? 's' : ''} restant${p.left > 1 ? 's' : ''}</span>` : '<span class="pill">Offre gratuite</span>';
+  const rows = [['Suivis eau, sommeil, pas, poids', true, true], ['Programme sport + démos animées', true, true], ['Recettes et conseils', true, true], ['Brief du coach chaque jour', true, true],
+    ['Messages au coach', `${D.FREE_LIMITS.coach} / semaine`, 'Illimité'], ['Scan peau avec IA', `${D.FREE_LIMITS.scan} / semaine`, 'Illimité'], ['Photos de repas', `${D.FREE_LIMITS.meal} / semaine`, 'Illimité'], ['Bilan du dimanche par le coach', false, true]];
+  const cell = (v) => (v === true ? '<span style="color:var(--steps)">✓</span>' : v === false ? '<span class="dim">—</span>' : `<span class="xs">${v}</span>`);
+  return `<div class="view">${header('Premium', { back: 'profil', right: status })}
+    <div class="card premium-hero"><div style="font-size:40px">⭐</div><h2 style="margin-top:6px">All In Premium</h2>
+      <p class="small muted" style="margin-top:6px;line-height:1.5">Ton coach, ton scan peau et tes photos de repas sans limite, un programme qui s'adapte chaque semaine et ton bilan du dimanche.</p>
+      ${p.status === 'free' && !p.trialUsed ? `<button class="btn primary block" style="margin-top:16px" data-act="trial">Essayer 7 jours gratuitement</button><p class="xs muted center" style="margin-top:8px">Sans carte bancaire · sans engagement</p>` : ''}
+      ${p.status === 'trial' ? `<p class="small" style="margin-top:12px;font-weight:700">Profite de ton essai : il reste ${p.left} jour${p.left > 1 ? 's' : ''}.</p>` : ''}</div>
+    <div class="card section"><h3>Ce que tu débloques</h3><div class="col" style="margin-top:12px;gap:12px">${D.PREMIUM_FEATURES.map(([i, t, d]) => `<div class="row" style="align-items:flex-start"><span style="font-size:22px">${i}</span><div><b class="small">${t}</b><p class="xs muted" style="margin-top:2px">${d}</p></div></div>`).join('')}</div></div>
+    <div class="card section"><div class="cmp-row head"><span></span><span>Gratuit</span><span>Premium</span></div>${rows.map(([l, f, pr]) => `<div class="cmp-row"><span class="small">${l}</span><span>${cell(f)}</span><span>${cell(pr)}</span></div>`).join('')}</div>
+    ${p.status !== 'premium' ? `<div class="section"><h2>Les formules</h2>
+      <div class="grid2" style="margin-top:12px"><div class="card plan-card"><div class="xs upper muted">Mensuel</div><div class="mid-num" style="margin-top:6px">Bientôt</div><p class="xs muted" style="margin-top:4px">Sans engagement</p></div>
+        <div class="card plan-card best"><span class="pill on" style="position:absolute;top:10px;right:10px;padding:3px 8px;font-size:10px">−40 %</span><div class="xs upper muted">Annuel</div><div class="mid-num" style="margin-top:6px">Bientôt</div><p class="xs muted" style="margin-top:4px">Le meilleur prix</p></div></div>
+      <p class="small muted" style="margin-top:12px;line-height:1.5">Paiement par carte CIB / Edahabia en Algérie et par carte bancaire dans les autres pays : en cours de mise en place.</p>
+      <button class="btn block" style="margin-top:12px" data-act="waitlist">${S.premium?.waitlist ? '✓ Tu seras prévenu' : '🔔 Me prévenir quand c\'est disponible'}</button></div>` : ''}
+  </div>`;
+}
+
+function planCard() {
+  if (!cloud.enabled) return '';
+  const p = planInfo();
+  if (p.status === 'premium') return `<div class="card tap" data-act="go" data-to="premium"><div class="row between"><div><div class="xs upper muted">Mon offre</div><h3 style="margin-top:4px">⭐ Premium</h3></div><span class="pill good">Actif</span></div></div>`;
+  if (p.status === 'trial') return `<div class="card tap" data-act="go" data-to="premium"><div class="row between"><div><div class="xs upper muted">Mon offre</div><h3 style="margin-top:4px">⭐ Essai Premium</h3><p class="small muted" style="margin-top:3px">Il reste ${p.left} jour${p.left > 1 ? 's' : ''}</p></div><span class="dim">›</span></div></div>`;
+  return `<div class="card premium-hero tap" data-act="go" data-to="premium"><div class="row between"><div><div class="xs upper muted">Mon offre : gratuite</div><h3 style="margin-top:4px">⭐ Découvre Premium</h3><p class="small muted" style="margin-top:3px">${p.trialUsed ? 'Coach, scans et photos illimités' : '7 jours gratuits, sans carte bancaire'}</p></div><span class="dim">›</span></div></div>`;
+}
+
+/* ---------- Programme évolutif : carte de progression ---------- */
+function progressCard(plan) {
+  const wn = weekNumber();
+  const light = isLightWeek();
+  const changed = [];
+  const seen = new Set();
+  plan.forEach((s) => s.exercises.forEach((e) => { if (e.shift && !seen.has(e.id)) { seen.add(e.id); changed.push(e); } }));
+  const nbFb = (S.feedback || []).length;
+  return `<div class="card progress-card"><div class="row between"><div><div class="xs upper muted">Semaine ${wn} · cycle ${((wn - 1) % 4) + 1}/4</div>
+      <h3 style="margin-top:4px">${light ? '🧘 Semaine légère (récupération)' : '📈 Ton programme évolue'}</h3></div></div>
+    <p class="small muted" style="margin-top:6px;line-height:1.5">${light ? 'Une série de moins sur chaque exercice cette semaine : tes muscles récupèrent et progressent. On repart plus fort la semaine prochaine.' : nbFb ? 'Après chaque exercice, tu indiques si c\'était trop dur ou trop facile : les répétitions s\'ajustent toutes seules.' : 'Après chaque exercice, dis si c\'était trop dur, parfait ou trop facile : ton programme s\'ajustera tout seul.'}</p>
+    ${changed.length ? `<div class="col" style="margin-top:10px;gap:6px">${changed.slice(0, 6).map((e) => `<div class="row between small"><span>${e.icon} ${e.name}</span><b style="color:${e.shift > 0 ? 'var(--steps)' : 'var(--food)'}">${e.shift > 0 ? '↑' : '↓'} ${esc(e.target)}</b></div>`).join('')}</div>` : ''}</div>`;
+}
+
+/* ---------- Bilan de la semaine ---------- */
+function reviewWeekStart() {
+  // Le dimanche (dès 16 h) : la semaine en cours ; sinon la semaine précédente
+  const now = new Date();
+  const mon = mondayOf();
+  const prev = weekdayMon() === 7 && now.getHours() >= 16 ? mon : addDays(mon, -7);
+  // Inscrit après cette semaine-là : on montre la semaine en cours
+  return (S.profile?.createdAt || '') > addDays(prev, 6) ? mon : prev;
+}
+const isCurrentWeek = (mon) => mon === mondayOf();
+function weekStats(mon) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(mon, i));
+  const t = targets();
+  const d = days.map((k) => peekDay(k));
+  const plan = buildPlan();
+  const planned = plan.length;
+  const done = d.filter((x) => x.workout).length;
+  const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
+  const waterDays = d.filter((x) => x.water > 0);
+  const sleepDays = d.filter((x) => x.sleep);
+  const stepDays = d.filter((x) => x.steps > 0);
+  const kcalDays = days.map((k) => dayNutrition(k).kcal).filter(Boolean);
+  const w = S.weights.filter((x) => x.date <= days[6]);
+  const wStart = S.weights.filter((x) => x.date < mon).slice(-1)[0] || S.weights.find((x) => x.date >= mon);
+  const wEnd = w.slice(-1)[0];
+  const fb = (S.feedback || []).filter((x) => x.d >= mon && x.d <= days[6]);
+  return {
+    from: mon, to: days[6], seances: `${done}/${planned}`, done, planned,
+    eau_moyenne_ml: Math.round(avg(waterDays.map((x) => x.water))), jours_objectif_eau: d.filter((x) => x.water >= t.waterBase).length,
+    sommeil_moyen_min: Math.round(avg(sleepDays.map((x) => x.sleep.minutes))), nuits_notees: sleepDays.length,
+    pas_moyens: Math.round(avg(stepDays.map((x) => x.steps))), kcal_moyennes: Math.round(avg(kcalDays)), jours_repas_notes: kcalDays.length,
+    poids_debut: wStart?.kg ?? null, poids_fin: wEnd?.kg ?? null,
+    retours_exercices: { trop_dur: fb.filter((x) => x.f < 0).length, parfait: fb.filter((x) => x.f === 0).length, trop_facile: fb.filter((x) => x.f > 0).length },
+  };
+}
+function reviewReady() {
+  const ok = weekdayMon() === 7 ? new Date().getHours() >= 16 : weekdayMon() <= 2;
+  return ok && !isCurrentWeek(reviewWeekStart());
+}
+
+function reviewCard() {
+  if (!reviewReady()) return '';
+  const wk = weekKey(reviewWeekStart());
+  const has = S.reviews?.[wk];
+  return `<div class="card review-card tap" data-act="go" data-to="bilan"><div class="row"><span style="font-size:30px">📊</span><div class="grow"><div class="xs upper muted">Bilan de la semaine</div><h3 style="margin-top:3px">${has ? esc(has.titre) : 'Ton bilan est prêt'}</h3><p class="small muted" style="margin-top:3px">${has ? 'Revois tes 3 objectifs de la semaine' : 'Tes chiffres de la semaine et tes objectifs'}</p></div><span class="dim">›</span></div></div>`;
+}
+
+async function fetchReview(mon) {
+  const wk = weekKey(mon);
+  ui.reviewLoading = true; rerender();
+  try {
+    const r = await ai('weekly', { context: buildContext(), week: weekStats(mon) });
+    S.reviews = { ...(S.reviews || {}), [wk]: { ...r, date: today() } };
+    const keys = Object.keys(S.reviews).sort();
+    keys.slice(0, Math.max(0, keys.length - 8)).forEach((k) => delete S.reviews[k]);
+    save();
+  } catch (e) { toast(e.message); }
+  ui.reviewLoading = false;
+  if (route().page === 'bilan') rerender();
+}
+
+function viewBilan() {
+  const mon = ui.reviewWeek || reviewWeekStart();
+  const st = weekStats(mon);
+  const wk = weekKey(mon);
+  const rv = S.reviews?.[wk];
+  const t = targets();
+  const pro = isPro();
+  const cur = isCurrentWeek(mon) && weekdayMon() < 7;
+  if (pro && cloud.user && !cur && !rv && !ui.reviewLoading && !ui.reviewTried?.[wk]) { ui.reviewTried = { ...(ui.reviewTried || {}), [wk]: true }; setTimeout(() => fetchReview(mon)); }
+  const tile = (ico, v, l, c = 'var(--text)') => `<div class="card" style="padding:12px"><div style="font-size:18px">${ico}</div><div class="mid-num" style="color:${c};margin-top:4px">${v}</div><div class="xs muted">${l}</div></div>`;
+  const dw = st.poids_debut != null && st.poids_fin != null ? st.poids_fin - st.poids_debut : null;
+  const ai = rv ? `<div class="card section coach-card"><div class="row"><div class="coach-av">🤖</div><div><div class="xs upper muted">Le mot du coach</div><h3 style="margin-top:3px">${esc(rv.titre)}</h3></div></div>
+      <p style="margin-top:10px;line-height:1.5">${esc(rv.resume)}</p>
+      <div class="xs upper muted" style="margin-top:12px">✅ Points forts</div><ul class="list-plain" style="margin-top:6px">${rv.points_forts.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      ${rv.a_ameliorer.length ? `<div class="xs upper muted" style="margin-top:12px">🎯 À améliorer</div><ul class="list-plain" style="margin-top:6px">${rv.a_ameliorer.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>
+    <div class="card section"><h3>Tes 3 objectifs de la semaine</h3><div class="col" style="margin-top:10px;gap:8px">${rv.objectifs.map((x, i) => `<div class="routine-step"><span class="n" style="background:rgba(212,255,58,.15);color:var(--accent)">${i + 1}</span><div class="grow small" style="line-height:1.45">${esc(x)}</div></div>`).join('')}</div></div>`
+    : ui.reviewLoading ? `<div class="card section center" style="padding:26px"><div class="spin"></div><p class="small muted" style="margin-top:10px">Le coach analyse ta semaine…</p></div>`
+    : cur ? `<div class="card section flat" style="background:var(--card2)"><p class="small" style="line-height:1.5">📅 Ta semaine est en cours. Ton bilan complet et le mot du coach arrivent <b>dimanche à 18 h</b>.</p></div>`
+    : pro ? `<button class="btn primary block section" data-act="review-gen">🤖 Demander mon bilan au coach</button>`
+    : `<div class="card section premium-hero"><div class="row"><span style="font-size:26px">🔒</span><div class="grow"><h3>Le mot du coach</h3><p class="small muted" style="margin-top:3px;line-height:1.45">Ce qui a marché, ce qui coince et tes 3 objectifs pour la semaine : réservé à Premium.</p></div></div>
+      <button class="btn primary block" style="margin-top:12px" data-act="${planInfo().trialUsed ? 'go-premium' : 'trial'}">${planInfo().trialUsed ? 'Voir Premium' : 'Essayer 7 jours gratuitement'}</button></div>`;
+  const past = Object.keys(S.reviews || {}).sort().reverse().filter((k) => k !== wk);
+  return `<div class="view">${header('Bilan', { back: 'home' })}
+    <p class="small muted">${cur ? 'Semaine en cours · ' : ''}Semaine du ${shortDate(st.from)} au ${shortDate(st.to)}</p>
+    <div class="grid3" style="margin-top:12px">${tile('🏋️', st.seances, 'séances', 'var(--accent)')}${tile('💧', st.eau_moyenne_ml ? (st.eau_moyenne_ml / 1000).toFixed(1).replace('.', ',') + ' L' : '—', 'eau / jour', 'var(--water)')}${tile('😴', st.sommeil_moyen_min ? fmtDur(st.sommeil_moyen_min) : '—', 'sommeil moyen', 'var(--sleep)')}
+      ${tile('👟', st.pas_moyens ? fmt(st.pas_moyens) : '—', 'pas / jour', 'var(--steps)')}${tile('🍽️', st.kcal_moyennes ? fmt(st.kcal_moyennes) : '—', `kcal / jour (obj. ${fmt(t.kcal)})`, 'var(--food)')}${tile('⚖️', dw == null ? '—' : `${dw > 0 ? '+' : ''}${dw.toFixed(1).replace('.', ',')}`, 'kg sur la semaine', 'var(--body)')}</div>
+    ${ai}
+    ${past.length ? `<div class="section"><h3>Bilans précédents</h3>${past.map((k) => `<div class="food-item"><div class="grow"><b class="small">${esc(S.reviews[k].titre)}</b><div class="xs muted">${k.replace('-S', ' · semaine ')}</div></div></div>`).join('')}</div>` : ''}</div>`;
+}
+
+/* ---------- Rappels ---------- */
+const DEFAULT_REM = { water: true, waterTimes: '10:00,13:00,16:00,19:00', bed: true, bedTime: '23:00', workout: true, workoutTime: '18:00', review: true };
+const rem = () => ({ ...DEFAULT_REM, ...(S.settings?.reminders || {}) });
+
+function remindersCard() {
+  const r = rem();
+  const tg = (k, label, extra = '') => `<div class="row between" style="padding:10px 0;border-bottom:1px solid var(--line)"><div class="grow"><b class="small">${label}</b>${extra}</div><button class="toggle ${r[k] ? 'on accent' : ''}" data-act="rem-toggle" data-k="${k}" aria-label="${label}"><i></i></button></div>`;
+  return `<div class="card"><h3>🔔 Mes rappels</h3><p class="small muted" style="margin-top:4px;line-height:1.5">Ajoute-les au calendrier de ton téléphone : tu recevras une alerte même appli fermée.</p>
+    <div style="margin-top:6px">
+      ${tg('water', '💧 Boire de l\'eau', `<div class="xs muted" style="margin-top:2px">À ${esc(r.waterTimes.split(',').join(', '))}</div>`)}
+      ${tg('bed', '😴 Aller me coucher', `<input type="time" class="input mini-time" data-on="rem-time" data-k="bedTime" value="${r.bedTime}">`)}
+      ${tg('workout', '🏋️ Ma séance de sport', `<div class="xs muted" style="margin-top:2px">Les jours d'entraînement</div><input type="time" class="input mini-time" data-on="rem-time" data-k="workoutTime" value="${r.workoutTime}">`)}
+      ${tg('review', '📊 Mon bilan du dimanche', '<div class="xs muted" style="margin-top:2px">Le dimanche à 18 h</div>')}
+    </div>
+    <button class="btn primary block" style="margin-top:14px" data-act="rem-export">📅 Ajouter à mon calendrier</button>
+    <p class="note" style="margin-top:8px">Si tu changes tes horaires plus tard, supprime l'ancien calendrier « All In » puis ajoute-le à nouveau.</p></div>`;
+}
+
+function buildIcs() {
+  const r = rem();
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const now = new Date();
+  const stamp = `${now.getUTCFullYear()}${pad2(now.getUTCMonth() + 1)}${pad2(now.getUTCDate())}T${pad2(now.getUTCHours())}${pad2(now.getUTCMinutes())}00Z`;
+  const startDay = today().replace(/-/g, '');
+  const appUrl = location.origin + location.pathname;
+  const ev = [];
+  const add = (time, title, desc, rrule, mins = 10) => {
+    const [h, m] = time.split(':').map(Number);
+    const endM = h * 60 + m + mins;
+    const icsText = (t) => t.replace(/([,;])/g, '\\$1');
+    title = icsText(title); desc = icsText(desc);
+    // Identifiant stable : réimporter le calendrier met à jour les rappels au lieu de les doubler
+    ev.push(['BEGIN:VEVENT', `UID:allin-${ev.length}@all-in`, `DTSTAMP:${stamp}`, `DTSTART:${startDay}T${pad2(h)}${pad2(m)}00`, `DTEND:${startDay}T${pad2(Math.floor(endM / 60) % 24)}${pad2(endM % 60)}00`,
+      `RRULE:${rrule}`, `SUMMARY:${title}`, `DESCRIPTION:${desc}\\n${appUrl}`, `URL:${appUrl}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT'].join('\r\n'));
+  };
+  if (r.water) r.waterTimes.split(',').forEach((t) => add(t.trim(), '💧 All In · Un verre d\'eau', 'Bois un grand verre d\'eau et note-le dans All In.', 'FREQ=DAILY', 5));
+  if (r.bed) {
+    const [h, m] = r.bedTime.split(':').map(Number);
+    const pre = ((h * 60 + m - 30) + 1440) % 1440;
+    add(`${pad2(Math.floor(pre / 60))}:${pad2(pre % 60)}`, '😴 All In · Prépare-toi à dormir', `Écrans coupés : coucher prévu à ${r.bedTime}.`, 'FREQ=DAILY', 30);
+  }
+  if (r.workout) {
+    const days = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+    const byday = buildPlan().map((s) => days[s.weekday - 1]).join(',');
+    if (byday) add(r.workoutTime, '🏋️ All In · C\'est l\'heure de ta séance', 'Ta séance du jour t\'attend dans All In.', `FREQ=WEEKLY;BYDAY=${byday}`, 45);
+  }
+  if (r.review) add('18:00', '📊 All In · Ton bilan de la semaine', 'Découvre ton bilan et tes objectifs de la semaine.', 'FREQ=WEEKLY;BYDAY=SU', 10);
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//All In//Rappels//FR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:All In', ...ev, 'END:VCALENDAR'].join('\r\n');
+}
+
+function exportReminders() {
+  const ics = buildIcs();
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (ios) { location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics); return; }
+  const blob = new Blob([ics], { type: 'text/calendar' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'all-in-rappels.ics'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  toast('Ouvre le fichier pour l\'ajouter à ton calendrier');
+}
+
+/* Rappel du moment, affiché dans l'appli */
+function nudgeCard() {
+  const r = rem();
+  const now = new Date();
+  const h = now.getHours() + now.getMinutes() / 60;
+  const d = peekDay(today()), t = targets();
+  if (r.bed) {
+    const [bh, bm] = r.bedTime.split(':').map(Number);
+    const bed = bh + bm / 60;
+    if (h >= bed - 1 && h < bed + 0.5) return `<div class="card flat nudge"><span style="font-size:22px">😴</span><div class="grow"><b class="small">Bientôt l'heure de dormir</b><p class="xs muted" style="margin-top:2px">Coucher prévu à ${r.bedTime} : coupe les écrans et baisse la lumière.</p></div></div>`;
+  }
+  if (r.water && h >= 10 && h <= 21) {
+    const expected = t.water * Math.min(1, Math.max(0, (h - 8) / 13));
+    if (d.water < expected - 300) return `<div class="card flat nudge"><span style="font-size:22px">💧</span><div class="grow"><b class="small">Pense à boire</b><p class="xs muted" style="margin-top:2px">Il est ${now.getHours()} h : tu en es à ${(d.water / 1000).toFixed(1).replace('.', ',')} L, vise environ ${(Math.round(expected / 100) / 10).toFixed(1).replace('.', ',')} L.</p></div><button class="btn sm" style="background:rgba(76,201,255,.15);color:var(--water)" data-act="water-add" data-ml="250">+250 ml</button></div>`;
+  }
+  return '';
+}
+
+Object.assign(A, {
+  trial: () => startTrial(),
+  'go-premium': () => { closeModal(); go('premium'); },
+  'paywall-skip': () => { closeModal(); const f = ui.paywallSkip; ui.paywallSkip = null; f?.(); },
+  waitlist: () => { S.premium = { ...(S.premium || {}), waitlist: true }; save(); toast('🔔 Tu seras prévenu dès que le paiement est disponible'); rerender(); },
+  'review-gen': () => fetchReview(ui.reviewWeek || reviewWeekStart()),
+  'rem-toggle': (el) => { const r = rem(); r[el.dataset.k] = !r[el.dataset.k]; S.settings = { ...(S.settings || {}), reminders: r }; save(); rerender(); },
+  'rem-export': () => exportReminders(),
+  'wk-fb': (el) => afterFeedback(el.dataset.v === 'skip' ? null : Number(el.dataset.v)),
+});
+Object.assign(INPUTS, {
+  'rem-time': (el) => { const r = rem(); r[el.dataset.k] = el.value; S.settings = { ...(S.settings || {}), reminders: r }; save(); },
+});
 
 /* ---------- Détail des calculs (transparence) ---------- */
 function calcDetails(t, p) {
